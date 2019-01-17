@@ -22,11 +22,12 @@ type Model interface {
 type FactoryModelFunc func(ctx context.Context) (Model, error)
 
 type aggregateProjectionModel struct {
-	lock         sync.Mutex
-	version      uint64
-	isFirstEvent bool
-	model        Model
-	eventstore   eventstore.EventStore
+	lock                sync.Mutex
+	version             uint64
+	hasSnapshot         bool
+	model               Model
+	numEventsInSnapshot int
+	eventstore          eventstore.EventStore
 }
 
 // Projection project events to user defined model from evenstore and update it by events from subscriber.
@@ -93,30 +94,22 @@ type iterator struct {
 }
 
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
-	if i.num > 0 {
-		if i.iter.Next(e) {
-			i.num++
-			i.lastVersion = e.Version
-			return true
-		}
-		return false
-	}
-
 	if i.iter.Next(e) {
 		switch {
-		case i.ap.isFirstEvent:
-			//we accept first event - it is snapshot or event with version 0
-			i.ap.isFirstEvent = false
-		case e.Version <= i.ap.version:
+		case e.Version == 0 || i.ap.SnapshotEventType() == e.EventType:
+			//it is first event or snapshot accept it
+			i.ap.hasSnapshot = true
+		case e.Version == i.ap.version+1 && i.ap.hasSnapshot:
+		case e.Version <= i.ap.version && i.ap.hasSnapshot:
 			//ignore event - it was already applied
 			return false
-		case e.Version == i.ap.version+1:
-			i.num++
-			return true
 		default:
 			i.needToLoadFromVersion = true
 			return false
 		}
+		i.lastVersion = e.Version
+		i.num++
+		return true
 	}
 	return false
 }
@@ -149,8 +142,13 @@ func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoE
 	if err != nil {
 		return fmt.Errorf("cannot handle event to aggregate projection model: %v", err)
 	}
+	ap.version = i.lastVersion
 	if i.needToLoadFromVersion {
-		_, err = ap.eventstore.LoadFromVersion(ctx, path, ap.version+1, ap)
+		if i.lastVersion == 0 {
+			_, err = ap.eventstore.LoadLatest(ctx, path, ap.numEventsInSnapshot, ap)
+		} else {
+			_, err = ap.eventstore.LoadFromVersion(ctx, path, ap.version+1, ap)
+		}
 		if err != nil {
 			return fmt.Errorf("cannot load previous events: %v", err)
 		}
@@ -182,7 +180,7 @@ func (pp projectPathsHandler) HandlePaths(ctx context.Context, iter eventstore.P
 					return nil, err
 				}
 
-				return &aggregateProjectionModel{model: model, eventstore: pp.projection.eventstore, isFirstEvent: true}, nil
+				return &aggregateProjectionModel{model: model, eventstore: pp.projection.eventstore, numEventsInSnapshot: pp.projection.numEventsInSnapshot}, nil
 			})
 		model, _, _, err := agProj.Project(ctx)
 		if err != nil {

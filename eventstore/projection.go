@@ -52,17 +52,8 @@ type iterator struct {
 }
 
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
-	if i.num > 0 {
-		if i.iter.Next(e) {
-			i.num++
-			i.lastVersion = e.Version
-			return true
-		}
-		return false
-	}
 	for i.iter.Next(e) {
-		switch {
-		case e.EventType == i.model.SnapshotEventType() || e.Version == 0:
+		if e.EventType == i.model.SnapshotEventType() || e.Version == 0 || i.num > 0 {
 			i.num++
 			i.lastVersion = e.Version
 			return true
