@@ -7,9 +7,9 @@ import (
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 )
 
-// Publisher publish events to topics
+// Publisher publish event to topics
 type Publisher interface {
-	Publish(ctx context.Context, topics []string, path protoEvent.Path, events event.Event) error
+	Publish(ctx context.Context, topics []string, path protoEvent.Path, event event.Event) error
 }
 
 // Subscriber creates observation over topics. When subscriptionID is same among more Subscribers events are balanced among them.

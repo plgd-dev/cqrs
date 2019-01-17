@@ -85,26 +85,38 @@ func path2string(path protoEvent.Path) string {
 func (ap *aggregateProjectionModel) SnapshotEventType() string { return ap.model.SnapshotEventType() }
 
 type iterator struct {
-	firstIter   bool
-	firstEvent  event.EventUnmarshaler
-	iter        event.Iter
-	num         int
-	lastVersion uint64
+	ap                    *aggregateProjectionModel
+	iter                  event.Iter
+	num                   int
+	lastVersion           uint64
+	needToLoadFromVersion bool
 }
 
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
-	if i.firstIter {
-		*e = i.firstEvent
-		i.firstIter = false
-		i.num++
-		i.lastVersion = e.Version
-		return true
+	if i.num > 0 {
+		if i.iter.Next(e) {
+			i.num++
+			i.lastVersion = e.Version
+			return true
+		}
+		return false
 	}
 
 	if i.iter.Next(e) {
-		i.num++
-		i.lastVersion = e.Version
-		return true
+		switch {
+		case i.ap.isFirstEvent:
+			//we accept first event - it is snapshot or event with version 0
+			i.ap.isFirstEvent = false
+		case e.Version <= i.ap.version:
+			//ignore event - it was already applied
+			return false
+		case e.Version == i.ap.version+1:
+			i.num++
+			return true
+		default:
+			i.needToLoadFromVersion = true
+			return false
+		}
 	}
 	return false
 }
@@ -115,6 +127,7 @@ func (i *iterator) Err() error {
 
 func (ap *aggregateProjectionModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
 	i := iterator{
+		ap:   ap,
 		iter: iter,
 	}
 	err := ap.model.HandleEvent(ctx, path, &i)
@@ -125,41 +138,24 @@ func (ap *aggregateProjectionModel) HandleEventFromStore(ctx context.Context, pa
 }
 
 func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
-	var eu event.EventUnmarshaler
-
-	if !iter.Next(&eu) {
-		return fmt.Errorf("cannot get first event for projection")
-	}
-
 	ap.lock.Lock()
 	defer ap.lock.Unlock()
 
-	switch {
-	case ap.isFirstEvent:
-		//we accept first event - it is snapshot or event with version 0
-		ap.isFirstEvent = false
-	case eu.Version <= ap.version:
-		//ignore event - it was already applied
-		return nil
-	case eu.Version == ap.version+1:
-		//apply event
-	default:
-		_, err := ap.eventstore.LoadFromVersion(ctx, path, ap.version+1, ap)
-		if err != nil {
-			return fmt.Errorf("cannot load previous events: %v", err)
-		}
-		return nil
-	}
 	i := iterator{
-		firstIter:  true,
-		firstEvent: eu,
-		iter:       iter,
+		ap:   ap,
+		iter: iter,
 	}
 	err := ap.model.HandleEvent(ctx, path, &i)
 	if err != nil {
-		ap.version = i.lastVersion
+		return fmt.Errorf("cannot handle event to aggregate projection model: %v", err)
 	}
-	return err
+	if i.needToLoadFromVersion {
+		_, err = ap.eventstore.LoadFromVersion(ctx, path, ap.version+1, ap)
+		if err != nil {
+			return fmt.Errorf("cannot load previous events: %v", err)
+		}
+	}
+	return nil
 }
 
 type projectPathsHandler struct {

@@ -45,26 +45,28 @@ type snapshotModel struct {
 }
 
 type iterator struct {
-	firstIter   bool
-	firstEvent  event.EventUnmarshaler
 	iter        event.Iter
 	num         int
 	lastVersion uint64
+	model       Model
 }
 
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
-	if i.firstIter {
-		*e = i.firstEvent
-		i.firstIter = false
-		i.num++
-		i.lastVersion = e.Version
-		return true
+	if i.num > 0 {
+		if i.iter.Next(e) {
+			i.num++
+			i.lastVersion = e.Version
+			return true
+		}
+		return false
 	}
-
-	if i.iter.Next(e) {
-		i.num++
-		i.lastVersion = e.Version
-		return true
+	for i.iter.Next(e) {
+		switch {
+		case e.EventType == i.model.SnapshotEventType() || e.Version == 0:
+			i.num++
+			i.lastVersion = e.Version
+			return true
+		}
 	}
 	return false
 }
@@ -75,22 +77,13 @@ func (i *iterator) Err() error {
 
 func (m *snapshotModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
 	m.isEmpty = false
-	var eu event.EventUnmarshaler
-
-	for iter.Next(&eu) {
-		switch {
-		case eu.EventType == m.model.SnapshotEventType() || eu.Version == 0:
-			i := iterator{
-				firstIter:  true,
-				firstEvent: eu,
-				iter:       iter,
-			}
-			err := m.model.HandleEvent(ctx, path, &i)
-			m.lastVersion = i.lastVersion
-			return i.num, err
-		}
+	i := iterator{
+		model: m.model,
+		iter:  iter,
 	}
-	return 0, nil
+	err := m.model.HandleEvent(ctx, path, &i)
+	m.lastVersion = i.lastVersion
+	return i.num, err
 }
 
 func (p Projection) loadEvents(ctx context.Context, model Model) (int, uint64, error) {
