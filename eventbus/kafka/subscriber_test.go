@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-ocf/cqrs/eventbus"
+	"github.com/go-ocf/cqrs/eventbus/test"
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -34,11 +34,13 @@ func TestSubscriber(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, publisher)
 
-	subscriber := NewSubscriber(
+	subscriber, err := NewSubscriber(
 		[]string{broker},
 		config,
-		json.Unmarshal)
+		json.Unmarshal,
+		func(err error) { assert.NoError(t, err) },
+	)
 	assert.NotNil(t, subscriber)
 
-	eventbus.AcceptanceTest(t, context.Background(), timeout, topics, publisher, subscriber)
+	test.AcceptanceTest(t, context.Background(), timeout, topics, publisher, subscriber)
 }

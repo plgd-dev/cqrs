@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/globalsign/mgo/bson"
-	"github.com/go-ocf/cqrs/eventstore"
+	"github.com/go-ocf/cqrs/eventstore/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,5 +31,5 @@ func TestEventStore(t *testing.T) {
 	}()
 
 	t.Log("event store with default namespace")
-	eventstore.AcceptanceTest(t, context.Background(), store)
+	test.AcceptanceTest(t, context.Background(), store)
 }

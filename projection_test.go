@@ -13,9 +13,7 @@ import (
 	"github.com/go-ocf/resources/protobuf/resources/commands"
 	"github.com/gofrs/uuid"
 
-	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus/kafka"
-	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/go-ocf/resources/protobuf/resources/events"
@@ -43,10 +41,13 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, publisher)
 
-	subscriber := kafka.NewSubscriber(
+	subscriber, err := kafka.NewSubscriber(
 		[]string{broker},
 		config,
-		json.Unmarshal)
+		json.Unmarshal,
+		func(err error) { assert.NoError(t, err) },
+	)
+	assert.NoError(t, err)
 	assert.NotNil(t, subscriber)
 
 	// Local Mongo testing with Docker
@@ -129,37 +130,31 @@ func TestProjection(t *testing.T) {
 		AuthorizationContext: &commands.AuthorizationContext{},
 	}
 
-	path2topic1 := func(path protoEvent.Path, event event.Event) []string {
-		return topics[0:1]
-	}
-	path2topic2 := func(path protoEvent.Path, event event.Event) []string {
-		return topics[1:2]
-	}
 	/*
 		path2topics := func(path protoEvent.Path, event event.Event) []string {
 			return topics
 		}
 	*/
 
-	a1, err := MakeAggregate(path1, numEventsInSnapshot, store, publisher, path2topic1, func(context.Context) (AggregateModel, error) {
+	a1, err := NewAggregate(path1, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 
-	storeErr, pubErr := a1.HandleCommand(ctx, commandPub1)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	evs, err := a1.HandleCommand(ctx, commandPub1)
+	assert.NoError(t, err)
+	assert.NotNil(t, evs)
 
-	a2, err := MakeAggregate(path2, numEventsInSnapshot, store, publisher, path2topic1, func(context.Context) (AggregateModel, error) {
+	a2, err := NewAggregate(path2, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 
-	storeErr, pubErr = a2.HandleCommand(ctx, commandPub2)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	evs, err = a2.HandleCommand(ctx, commandPub2)
+	assert.NoError(t, err)
+	assert.NotNil(t, evs)
 
-	projection, err := NewProjection(ctx, store, numEventsInSnapshot, subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	projection, err := NewProjection(ctx, store, numEventsInSnapshot, subscriber, func(context.Context) (Model, error) { return &mockEventHandler{}, nil })
 	assert.NoError(t, err)
 
 	err = projection.Project(path1)
@@ -173,22 +168,31 @@ func TestProjection(t *testing.T) {
 	err = projection.SetTopicsToObserve(topics)
 	assert.NoError(t, err)
 
-	a3, err := MakeAggregate(path3, numEventsInSnapshot, store, publisher, path2topic2, func(context.Context) (AggregateModel, error) {
+	a3, err := NewAggregate(path3, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 
-	storeErr, pubErr = a3.HandleCommand(ctx, commandPub3)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	evs, err = a3.HandleCommand(ctx, commandPub3)
+	assert.NoError(t, err)
+	assert.NotNil(t, evs)
+	for _, e := range evs {
+		err = publisher.Publish(ctx, topics, path3, e)
+		assert.NoError(t, err)
+	}
+
 	time.Sleep(time.Second)
 	projection.lock.Lock()
 	assert.Equal(t, 3, len(projection.aggregateProjections))
 	projection.lock.Unlock()
 
-	storeErr, pubErr = a1.HandleCommand(ctx, commandUnpub1)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	evs, err = a1.HandleCommand(ctx, commandUnpub1)
+	assert.NoError(t, err)
+	assert.NotNil(t, evs)
+	for _, e := range evs {
+		err = publisher.Publish(ctx, topics, path3, e)
+		assert.NoError(t, err)
+	}
 
 	err = projection.SetTopicsToObserve(topics[0:1])
 	assert.NoError(t, err)
@@ -196,18 +200,28 @@ func TestProjection(t *testing.T) {
 	err = projection.Forget(path3)
 	assert.NoError(t, err)
 
-	storeErr, pubErr = a3.HandleCommand(ctx, commandUnpub3)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	evs, err = a3.HandleCommand(ctx, commandUnpub3)
+	assert.NoError(t, err)
+	assert.NotNil(t, evs)
+	for _, e := range evs {
+		err = publisher.Publish(ctx, topics[1:], path3, e)
+		assert.NoError(t, err)
+	}
+
 	time.Sleep(time.Second)
 	projection.lock.Lock()
 	assert.Equal(t, 2, len(projection.aggregateProjections))
 	projection.lock.Unlock()
 
 	err = projection.SetTopicsToObserve(nil)
-	storeErr, pubErr = a1.HandleCommand(ctx, commandPub1)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	assert.NoError(t, err)
+	evs, err = a1.HandleCommand(ctx, commandPub1)
+	assert.NoError(t, err)
+	assert.NotNil(t, evs)
+	for _, e := range evs {
+		err = publisher.Publish(ctx, topics, path1, e)
+		assert.NoError(t, err)
+	}
 	projection.lock.Lock()
 	assert.Equal(t, 2, len(projection.aggregateProjections))
 	projection.lock.Unlock()

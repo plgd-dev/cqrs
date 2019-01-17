@@ -1,28 +1,3 @@
-/**
- * Copyright (c) 2018 KISTLER INSTRUMENTE AG, Winterthur, Switzerland
- *
- * @file eventbus.go
- *
- * Created on: Sep 21, 2018
- * Project: eh-kafka
- * Description: Event Bus Kafka for Event Horizont
- *
- * This file is part of eh-kafka.
- *
- * eh-kafka is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 2.1 of the License, or
- * (at your option) any later version.
- *
- * eh-kafka is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with eh-kafka. If not, see <http://www.gnu.org/licenses/>.
- */
-
 package kafka
 
 import (

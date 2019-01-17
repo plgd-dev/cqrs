@@ -108,30 +108,33 @@ func (rs *ResourceStateSnapshotTaken) HandleEventResourceUnpublished(ctx context
 	return nil
 }
 
-func (rs *ResourceStateSnapshotTaken) HandleEvent(ctx context.Context, path protoEvent.Path, eu event.EventUnmarshaler) error {
-	if eu.EventType() == "" {
-		return errors.New("cannot determine type of event")
-	}
-	switch eu.EventType() {
-	case http.ProtobufContentType(&events.ResourceStateSnapshotTaken{}):
-		var s ResourceStateSnapshotTaken
-		if err := eu.Unmarshal(&s); err != nil {
-			return err
+func (rs *ResourceStateSnapshotTaken) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+	var eu event.EventUnmarshaler
+	for iter.Next(&eu) {
+		if eu.EventType == "" {
+			return errors.New("cannot determine type of event")
 		}
-		*rs = s
-		return nil
-	case http.ProtobufContentType(&events.ResourcePublished{}):
-		var s ResourcePublished
-		if err := eu.Unmarshal(&s); err != nil {
-			return err
+		switch eu.EventType {
+		case http.ProtobufContentType(&events.ResourceStateSnapshotTaken{}):
+			var s ResourceStateSnapshotTaken
+			if err := eu.Unmarshal(&s); err != nil {
+				return err
+			}
+			*rs = s
+			return nil
+		case http.ProtobufContentType(&events.ResourcePublished{}):
+			var s ResourcePublished
+			if err := eu.Unmarshal(&s); err != nil {
+				return err
+			}
+			return rs.HandleEventResourcePublished(ctx, s)
+		case http.ProtobufContentType(&events.ResourceUnpublished{}):
+			var s ResourceUnpublished
+			if err := eu.Unmarshal(&s); err != nil {
+				return err
+			}
+			return rs.HandleEventResourceUnpublished(ctx, s)
 		}
-		return rs.HandleEventResourcePublished(ctx, s)
-	case http.ProtobufContentType(&events.ResourceUnpublished{}):
-		var s ResourceUnpublished
-		if err := eu.Unmarshal(&s); err != nil {
-			return err
-		}
-		return rs.HandleEventResourceUnpublished(ctx, s)
 	}
 	return nil
 }
@@ -207,14 +210,25 @@ func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event,
 }
 
 type mockEventHandler struct {
-	events []event.Event
+	events []event.EventUnmarshaler
 }
 
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, eu event.EventUnmarshaler) error {
-	if eu.EventType() == "" {
-		return errors.New("cannot determine type of event")
+func (eh *mockEventHandler) BeforeLoadingEventsFromEventstore(ctx context.Context, path protoEvent.Path) {
+
+}
+
+func (eh *mockEventHandler) AfterLoadingEventsFromEventstore(ctx context.Context, path protoEvent.Path) {
+
+}
+
+func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+	var eu event.EventUnmarshaler
+	for iter.Next(&eu) {
+		if eu.EventType == "" {
+			return errors.New("cannot determine type of event")
+		}
+		eh.events = append(eh.events, eu)
 	}
-	eh.events = append(eh.events, eu)
 	return nil
 }
 
@@ -281,33 +295,34 @@ func TestAggregate(t *testing.T) {
 		AuthorizationContext: &commands.AuthorizationContext{},
 	}
 
-	a, err := MakeAggregate(path, 1, store, nil, nil, func(context.Context) (AggregateModel, error) {
+	a, err := NewAggregate(path, store, 1, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 
-	storeErr, pubErr := a.HandleCommand(ctx, commandPub)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	events, err := a.HandleCommand(ctx, commandPub)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
 
-	storeErr, pubErr = a.HandleCommand(ctx, commandPub)
-	assert.Error(t, storeErr)
-	assert.NoError(t, pubErr)
-	storeErr, pubErr = a.HandleCommand(ctx, commandUnpub)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	events, err = a.HandleCommand(ctx, commandPub)
+	assert.Error(t, err)
+	assert.Nil(t, events)
 
-	storeErr, pubErr = a.HandleCommand(ctx, commandUnpub)
-	assert.Error(t, storeErr)
-	assert.NoError(t, pubErr)
+	events, err = a.HandleCommand(ctx, commandUnpub)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
 
-	storeErr, pubErr = a.HandleCommand(ctx, commandPub)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	events, err = a.HandleCommand(ctx, commandUnpub)
+	assert.Error(t, err)
+	assert.Nil(t, events)
 
-	storeErr, pubErr = a.HandleCommand(ctx, commandUnpub)
-	assert.NoError(t, storeErr)
-	assert.NoError(t, pubErr)
+	events, err = a.HandleCommand(ctx, commandPub)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
+
+	events, err = a.HandleCommand(ctx, commandUnpub)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
 
 	p := eventstore.MakeProjection(path, 1, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
 

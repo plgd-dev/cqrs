@@ -14,11 +14,18 @@ import (
 	"github.com/gofrs/uuid"
 )
 
+type Model interface {
+	eventstore.Model
+}
+
+// FactoryModelFunc creates user model.
+type FactoryModelFunc func(ctx context.Context) (Model, error)
+
 type aggregateProjectionModel struct {
 	lock         sync.Mutex
 	version      uint64
 	isFirstEvent bool
-	model        eventstore.Model
+	model        Model
 	eventstore   eventstore.EventStore
 }
 
@@ -29,7 +36,7 @@ type Projection struct {
 	numEventsInSnapshot int
 	ctx                 context.Context
 	cancel              context.CancelFunc
-	factoryModel        eventstore.FactoryModelFunc
+	factoryModel        FactoryModelFunc
 
 	subscriber     eventbus.Subscriber
 	subscriptionId string
@@ -41,7 +48,7 @@ type Projection struct {
 }
 
 // NewProjection creates projection.
-func NewProjection(ctx context.Context, eventstore eventstore.EventStore, numEventsInSnapshot int, subscriber eventbus.Subscriber, factoryModel eventstore.FactoryModelFunc) (*Projection, error) {
+func NewProjection(ctx context.Context, eventstore eventstore.EventStore, numEventsInSnapshot int, subscriber eventbus.Subscriber, factoryModel FactoryModelFunc) (*Projection, error) {
 	if eventstore == nil {
 		return nil, errors.New("invalid handle of event store")
 	}
@@ -77,79 +84,132 @@ func path2string(path protoEvent.Path) string {
 
 func (ap *aggregateProjectionModel) SnapshotEventType() string { return ap.model.SnapshotEventType() }
 
-func (ap *aggregateProjectionModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, eventUnmarshaler event.EventUnmarshaler) (bool, error) {
-	//this function is called from HandleEven under lock -> we just apply call
-	if eventUnmarshaler.Version() != eventUnmarshaler.Version()+1 {
-		return false, fmt.Errorf("event version unexpected over jump events")
-	}
-	ap.version = eventUnmarshaler.Version()
-	return true, ap.model.HandleEvent(ctx, path, eventUnmarshaler)
+type iterator struct {
+	firstIter   bool
+	firstEvent  event.EventUnmarshaler
+	iter        event.Iter
+	num         int
+	lastVersion uint64
 }
 
-func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoEvent.Path, eventUnmarshaler event.EventUnmarshaler) error {
+func (i *iterator) Next(e *event.EventUnmarshaler) bool {
+	if i.firstIter {
+		*e = i.firstEvent
+		i.firstIter = false
+		i.num++
+		i.lastVersion = e.Version
+		return true
+	}
+
+	if i.iter.Next(e) {
+		i.num++
+		i.lastVersion = e.Version
+		return true
+	}
+	return false
+}
+
+func (i *iterator) Err() error {
+	return i.iter.Err()
+}
+
+func (ap *aggregateProjectionModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
+	i := iterator{
+		iter: iter,
+	}
+	err := ap.model.HandleEvent(ctx, path, &i)
+	if err != nil {
+		ap.version = i.lastVersion
+	}
+	return i.num, err
+}
+
+func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+	var eu event.EventUnmarshaler
+
+	if !iter.Next(&eu) {
+		return fmt.Errorf("cannot get first event for projection")
+	}
+
 	ap.lock.Lock()
 	defer ap.lock.Unlock()
+
 	switch {
 	case ap.isFirstEvent:
 		//we accept first event - it is snapshot or event with version 0
 		ap.isFirstEvent = false
-	case eventUnmarshaler.Version() <= ap.version:
+	case eu.Version <= ap.version:
 		//ignore event - it was already applied
 		return nil
-	case eventUnmarshaler.Version() == ap.version+1:
+	case eu.Version == ap.version+1:
 		//apply event
 	default:
 		_, err := ap.eventstore.LoadFromVersion(ctx, path, ap.version+1, ap)
 		if err != nil {
 			return fmt.Errorf("cannot load previous events: %v", err)
 		}
+		return nil
 	}
-	ap.version = eventUnmarshaler.Version()
-	return ap.model.HandleEvent(ctx, path, eventUnmarshaler)
+	i := iterator{
+		firstIter:  true,
+		firstEvent: eu,
+		iter:       iter,
+	}
+	err := ap.model.HandleEvent(ctx, path, &i)
+	if err != nil {
+		ap.version = i.lastVersion
+	}
+	return err
+}
+
+type projectPathsHandler struct {
+	projection *Projection
+}
+
+func (pp projectPathsHandler) HandlePaths(ctx context.Context, iter eventstore.PathIter) error {
+	var path protoEvent.Path
+	var errors []error
+	for iter.Next(&path) {
+		agProj := eventstore.MakeProjection(path,
+			pp.projection.numEventsInSnapshot,
+			pp.projection.eventstore,
+			func(ctx context.Context) (eventstore.Model, error) {
+				pp.projection.lock.Lock()
+				if aggp, ok := pp.projection.aggregateProjections[path2string(path)]; ok {
+					pp.projection.lock.Unlock()
+					return aggp, nil
+				}
+				pp.projection.lock.Unlock()
+
+				model, err := pp.projection.factoryModel(ctx)
+				if err != nil {
+					return nil, err
+				}
+
+				return &aggregateProjectionModel{model: model, eventstore: pp.projection.eventstore, isFirstEvent: true}, nil
+			})
+		model, _, _, err := agProj.Project(ctx)
+		if err != nil {
+			errors = append(errors, err)
+		}
+		pp.projection.lock.Lock()
+		defer pp.projection.lock.Unlock()
+		pp.projection.aggregateProjections[path2string(path)] = model.(*aggregateProjectionModel)
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("%v", errors)
+	}
+	return iter.Err()
 }
 
 // Project load events from aggregates that below to path.
 func (p *Projection) Project(path protoEvent.Path) error {
-	paths := []protoEvent.Path{path}
-	if path.AggregateId == "" {
-		ps, err := p.eventstore.ListPaths(p.ctx, path)
-		if err != nil {
-			return fmt.Errorf("cannot load paths: %v", err)
-		}
-		paths = ps
+	pathsHandler := projectPathsHandler{projection: p}
+	err := p.eventstore.ListPaths(p.ctx, path, &pathsHandler)
+	if err != nil {
+		return fmt.Errorf("cannot load paths: %v", err)
 	}
 
-	var errors []error
-
-	for _, path := range paths {
-		agProj := eventstore.MakeProjection(path,
-			p.numEventsInSnapshot,
-			p.eventstore,
-			func(ctx context.Context) (eventstore.Model, error) {
-				p.lock.Lock()
-				if aggp, ok := p.aggregateProjections[path2string(path)]; ok {
-					p.lock.Unlock()
-					return aggp, nil
-				}
-				p.lock.Unlock()
-
-				model, err := p.factoryModel(ctx)
-				if err != nil {
-					return nil, err
-				}
-				return &aggregateProjectionModel{model: model, eventstore: p.eventstore, isFirstEvent: true}, nil
-			})
-		model, _, _, err := agProj.Project(p.ctx)
-		if err != nil {
-			errors = append(errors, err)
-		}
-		p.lock.Lock()
-		defer p.lock.Unlock()
-		p.aggregateProjections[path2string(path)] = model.(*aggregateProjectionModel)
-	}
-	if len(errors) > 0 {
-		return fmt.Errorf("cannot load paths to projection: %v", errors)
-	}
 	return nil
 }
 
@@ -169,7 +229,7 @@ type projectionHandler struct {
 	projection *Projection
 }
 
-func (p projectionHandler) HandleEvent(ctx context.Context, path protoEvent.Path, eventUnmarshaler event.EventUnmarshaler) error {
+func (p projectionHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
 	p.projection.lock.Lock()
 	var ap *aggregateProjectionModel
 	if found, ok := p.projection.aggregateProjections[path2string(path)]; ok {
@@ -178,7 +238,7 @@ func (p projectionHandler) HandleEvent(ctx context.Context, path protoEvent.Path
 	p.projection.lock.Unlock()
 
 	if ap != nil {
-		return ap.HandleEvent(ctx, path, eventUnmarshaler)
+		return ap.HandleEvent(ctx, path, iter)
 	} else {
 		return p.projection.Project(path)
 	}

@@ -1,18 +1,4 @@
-// Copyright (c) 2016 - The event.Event Horizon authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-package eventstore
+package test
 
 import (
 	"context"
@@ -21,6 +7,7 @@ import (
 
 	"github.com/globalsign/mgo/bson"
 	event "github.com/go-ocf/cqrs/event"
+	"github.com/go-ocf/cqrs/eventstore"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/stretchr/testify/assert"
 )
@@ -48,24 +35,54 @@ type mockEventHandler struct {
 	events []event.Event
 }
 
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, eu event.EventUnmarshaler) error {
-	if eu.EventType() == "" {
-		return errors.New("cannot determine type of event")
+func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+	var eu event.EventUnmarshaler
+
+	for iter.Next(&eu) {
+		if eu.EventType == "" {
+			return errors.New("cannot determine type of event")
+		}
+		var e mockEvent
+		err := eu.Unmarshal(&e)
+		if err != nil {
+			return err
+		}
+		eh.events = append(eh.events, e)
 	}
-	var e mockEvent
-	err := eu.Unmarshal(&e)
-	if err != nil {
-		return err
-	}
-	eh.events = append(eh.events, e)
 	return nil
 }
 
-func (eh *mockEventHandler) HandleEventFromStore(ctx context.Context, path protoEvent.Path, eu event.EventUnmarshaler) (bool, error) {
-	return true, eh.HandleEvent(ctx, path, eu)
+func (eh *mockEventHandler) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
+	var eu event.EventUnmarshaler
+	var num int
+	for iter.Next(&eu) {
+		if eu.EventType == "" {
+			return 0, errors.New("cannot determine type of event")
+		}
+		var e mockEvent
+		err := eu.Unmarshal(&e)
+		if err != nil {
+			return 0, err
+		}
+		eh.events = append(eh.events, e)
+		num++
+	}
+	return num, nil
 }
 
 func (eh *mockEventHandler) SnapshotEventType() string { return "snapshot" }
+
+type mockPathsHandler struct {
+	paths []protoEvent.Path
+}
+
+func (p *mockPathsHandler) HandlePaths(ctx context.Context, iter eventstore.PathIter) error {
+	var path protoEvent.Path
+	for iter.Next(&path) {
+		p.paths = append(p.paths, path)
+	}
+	return nil
+}
 
 // AcceptanceTest is the acceptance test that all implementations of EventStore
 // should pass. It should manually be called from a test case in each
@@ -77,7 +94,7 @@ func (eh *mockEventHandler) SnapshotEventType() string { return "snapshot" }
 //       eventstore.AcceptanceTest(t, ctx, store)
 //   }
 //
-func AcceptanceTest(t *testing.T, ctx context.Context, store EventStore) {
+func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventStore) {
 	savedEvents := []event.Event{}
 	AggregateID1 := "aggregateID1"
 	AggregateID2 := "aggregateID2"
@@ -217,29 +234,32 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store EventStore) {
 
 	t.Log("load last events with negative limit")
 	var eh4error mockEventHandler
-	numEvents, err = store.LoadLastEvents(ctx, aggregateIDNotExistPath, -1, &eh4error)
+	numEvents, err = store.LoadLatest(ctx, aggregateIDNotExistPath, -1, &eh4error)
 	assert.Error(t, err)
 	assert.Equal(t, -1, numEvents)
 
 	t.Log("load last events from non-existing aggregate")
 	var eh4n mockEventHandler
-	numEvents, err = store.LoadLastEvents(ctx, aggregateIDNotExistPath, 3, &eh4n)
+	numEvents, err = store.LoadLatest(ctx, aggregateIDNotExistPath, 3, &eh4n)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, numEvents)
 
 	t.Log("load last events")
 	var eh4 mockEventHandler
-	numEvents, err = store.LoadLastEvents(ctx, aggregateID1Path, len(savedEvents[3:6]), &eh4)
+	numEvents, err = store.LoadLatest(ctx, aggregateID1Path, len(savedEvents[3:6]), &eh4)
 	assert.Equal(t, len(savedEvents[3:6]), numEvents)
 	assert.NoError(t, err)
 	assert.Equal(t, savedEvents[3:6], eh4.events)
 
 	t.Log("list aggregate paths")
-	paths, err := store.ListPaths(ctx, protoEvent.Path{Path: []string{"deviceId"}})
-	assert.NoError(t, err)
-	assert.Equal(t, []protoEvent.Path{aggregateID1Path, aggregateID2Path}, paths)
 
-	p := MakeProjection(aggregateID1Path, 1, store, func(context.Context) (Model, error) { return &mockEventHandler{}, nil })
+	paths := mockPathsHandler{}
+
+	err = store.ListPaths(ctx, protoEvent.Path{Path: []string{"deviceId"}}, &paths)
+	assert.NoError(t, err)
+	assert.Equal(t, []protoEvent.Path{aggregateID1Path, aggregateID2Path}, paths.paths)
+
+	p := eventstore.MakeProjection(aggregateID1Path, 1, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
 
 	model, numEvents, lastVersion, err := p.Project(ctx)
 	assert.NoError(t, err)

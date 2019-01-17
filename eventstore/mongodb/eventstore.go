@@ -1,17 +1,3 @@
-// Copyright (c) 2015 - The Event Horizon authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package mongodb
 
 import (
@@ -139,53 +125,45 @@ func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []ev
 	return false, err
 }
 
-type eventUnmarshaler struct {
-	e           dbEvent
-	unmarshaler event.UnmarshalerFunc
+type iterator struct {
+	firstIter       bool
+	version         uint64
+	iter            *mgo.Iter
+	dataUnmarshaler event.UnmarshalerFunc
+	err             error
 }
 
-func (eu eventUnmarshaler) Unmarshal(v interface{}) error {
-	return eu.unmarshaler(eu.e.Data.Data, v)
-}
+func (i *iterator) Next(e *event.EventUnmarshaler) bool {
+	var event dbEvent
 
-func (eu eventUnmarshaler) Version() uint64 {
-	return eu.e.Version
-}
-
-func (eu eventUnmarshaler) AggregateId() string {
-	return eu.e.AggregateId
-}
-
-func (eu eventUnmarshaler) EventType() string {
-	return eu.e.EventType
-}
-
-func processIterator(ctx context.Context, path protoEvent.Path, eh eventstore.Handler, dataUnmarshaler event.UnmarshalerFunc, iter *mgo.Iter) (int, error) {
-	eu := eventUnmarshaler{unmarshaler: dataUnmarshaler}
-	var version uint64
-	firstIter := true
-
-	numEvents := 0
-	for iter.Next(&eu.e) {
-		if firstIter {
-			version = eu.e.Version
-			firstIter = false
+	if i.iter.Next(&event) {
+		if i.firstIter {
+			i.version = event.Version
+			i.firstIter = false
 		} else {
-			if version+1 != eu.e.Version {
-				return -1, errors.New("invalid event version stored in eventstore")
+			if i.version+1 != event.Version {
+				i.err = errors.New("invalid event version stored in eventstore")
+				return false
 			}
-			version++
-		}
-		applied, err := eh.HandleEventFromStore(ctx, path, eu)
-		if err != nil {
-			return -1, fmt.Errorf("cannot load events %v", err)
-		}
-		if applied {
-			numEvents++
+			i.version++
 		}
 
+		e.Version = event.Version
+		e.AggregateId = event.AggregateId
+		e.EventType = event.EventType
+		e.Unmarshal = func(v interface{}) error {
+			return i.dataUnmarshaler(event.Data.Data, v)
+		}
+		return true
 	}
-	return numEvents, nil
+	return false
+}
+
+func (i *iterator) Err() error {
+	if i.err == nil {
+		return i.iter.Err()
+	}
+	return i.err
 }
 
 // Load loads events from begining.
@@ -198,7 +176,13 @@ func (s *EventStore) Load(ctx context.Context, path protoEvent.Path, eh eventsto
 
 	iter := sess.DB(s.DBName()).C(Path2CName(path)).Find(bson.M{"aggregateid": path.AggregateId}).Iter()
 
-	numEvents, err := processIterator(ctx, path, eh, s.dataUnmarshaler, iter)
+	i := iterator{
+		firstIter:       true,
+		iter:            iter,
+		dataUnmarshaler: s.dataUnmarshaler,
+	}
+	numEvents, err := eh.HandleEventFromStore(ctx, path, &i)
+
 	errClose := iter.Close()
 	if numEvents > 0 && err == nil {
 		return numEvents, errClose
@@ -206,54 +190,76 @@ func (s *EventStore) Load(ctx context.Context, path protoEvent.Path, eh eventsto
 	return numEvents, err
 }
 
-// LoadLastEvents loads last number of events from eventstore.
-func (s *EventStore) LoadLastEvents(ctx context.Context, path protoEvent.Path, limit int, eh eventstore.Handler) (int, error) {
+type lastIterator struct {
+	firstIter       bool
+	version         uint64
+	idx             int
+	events          []dbEvent
+	dataUnmarshaler event.UnmarshalerFunc
+	err             error
+}
+
+func (i *lastIterator) Next(e *event.EventUnmarshaler) bool {
+	if i.idx < len(i.events) {
+		if i.firstIter {
+			i.version = i.events[i.idx].Version
+			i.firstIter = false
+		} else {
+			if i.version+1 != i.events[i.idx].Version {
+				i.err = errors.New("invalid event version stored in eventstore")
+				return false
+			}
+			i.version++
+		}
+
+		e.Version = i.events[i.idx].Version
+		e.AggregateId = i.events[i.idx].AggregateId
+		e.EventType = i.events[i.idx].EventType
+		idx := i.idx
+		e.Unmarshal = func(v interface{}) error {
+			return i.dataUnmarshaler(i.events[idx].Data.Data, v)
+		}
+		i.idx++
+		return true
+	}
+	return false
+}
+
+func (i *lastIterator) Err() error {
+	return i.err
+}
+
+// LoadLatest loads last number of events from eventstore.
+func (s *EventStore) LoadLatest(ctx context.Context, path protoEvent.Path, count int, eh eventstore.Handler) (int, error) {
 	if path.AggregateId == "" {
 		return -1, errors.New("cannot load events without AggregateId")
 	}
-	if limit <= 0 {
+	if count <= 0 {
 		return -1, errors.New("cannot load last events with negative limit <= 0")
 	}
 	sess := s.session.Copy()
 	defer sess.Close()
 
-	iter := sess.DB(s.DBName()).C(Path2CName(path)).Find(bson.M{"aggregateid": path.AggregateId}).Sort("-_id").Limit(limit).Iter()
+	iter := sess.DB(s.DBName()).C(Path2CName(path)).Find(bson.M{"aggregateid": path.AggregateId}).Sort("-_id").Limit(count).Iter()
 
-	events := make([]dbEvent, 0, limit)
+	events := make([]dbEvent, 0, count)
 
 	var e dbEvent
 	for iter.Next(&e) {
 		events = append([]dbEvent{e}, events...)
 	}
-	numEvents := 0
-	firstIter := true
-	if iter.Err() == nil {
-		var version uint64
-		for _, event := range events {
-			if firstIter {
-				version = event.Version
-				firstIter = false
-			} else {
-				if version+1 != event.Version {
-					return -1, errors.New("invalid event version stored in eventstore")
-				}
-				version++
-			}
-			ed := eventUnmarshaler{e: event, unmarshaler: s.dataUnmarshaler}
-			applied, err := eh.HandleEventFromStore(ctx, path, ed)
-			if err != nil {
-				iter.Close()
-				return -1, fmt.Errorf("cannot load last events %v", err)
-			}
-			if applied {
-				numEvents++
-			}
-		}
-	} else if iter.Err() == mgo.ErrNotFound {
-		return 0, nil
+	err := iter.Close()
+	if err != nil {
+		return 0, fmt.Errorf("cannot load last events: %v", err)
 	}
 
-	return numEvents, iter.Close()
+	i := lastIterator{
+		firstIter:       true,
+		events:          events,
+		dataUnmarshaler: s.dataUnmarshaler,
+	}
+
+	return eh.HandleEventFromStore(ctx, path, &i)
 }
 
 // LoadFromVersion loads greater or equal events than version.
@@ -266,7 +272,13 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, path protoEvent.Path, 
 
 	iter := sess.DB(s.DBName()).C(Path2CName(path)).Find(bson.M{"_id": bson.M{"$gte": version}}).Iter()
 
-	numEvents, err := processIterator(ctx, path, eh, s.dataUnmarshaler, iter)
+	i := iterator{
+		firstIter:       true,
+		iter:            iter,
+		dataUnmarshaler: s.dataUnmarshaler,
+	}
+	numEvents, err := eh.HandleEventFromStore(ctx, path, &i)
+
 	errClose := iter.Close()
 	if numEvents > 0 && err == nil {
 		return numEvents, errClose
@@ -274,25 +286,51 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, path protoEvent.Path, 
 	return numEvents, err
 }
 
+type pathIterator struct {
+	idx   int
+	paths []protoEvent.Path
+}
+
+func (i *pathIterator) Next(path *protoEvent.Path) bool {
+	if i.idx < len(i.paths) {
+		*path = i.paths[i.idx]
+		i.idx++
+		return true
+	}
+	return false
+}
+
+func (i *pathIterator) Err() error {
+	return nil
+}
+
 // ListPaths lists aggregate paths by provided path.
-func (s *EventStore) ListPaths(ctx context.Context, path protoEvent.Path) ([]protoEvent.Path, error) {
+func (s *EventStore) ListPaths(ctx context.Context, path protoEvent.Path, pathsHandler eventstore.PathsHandler) error {
+	if pathsHandler == nil {
+		return fmt.Errorf("invalid pathsHandler")
+	}
 	sess := s.session.Copy()
 	defer sess.Close()
 	names, err := sess.DB(s.DBName()).CollectionNames()
 	if err != nil {
-		return nil, fmt.Errorf("cannot get collection names: %v", err)
+		return fmt.Errorf("cannot get collection names: %v", err)
 	}
 
 	prefix := Path2CName(path)
 
-	result := make([]protoEvent.Path, 0, 128)
+	paths := make([]protoEvent.Path, 0, 128)
 
 	for _, n := range names {
 		if strings.HasPrefix(n, prefix) && !strings.HasSuffix(n, ".stash") {
-			result = append(result, CName2Path(n))
+			paths = append(paths, CName2Path(n))
 		}
 	}
-	return result, nil
+
+	i := pathIterator{
+		paths: paths,
+	}
+
+	return pathsHandler.HandlePaths(ctx, &i)
 }
 
 // Clear clears the event storage.

@@ -1,18 +1,4 @@
-// Copyright (c) 2016 - The Event Horizon authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-package eventbus
+package test
 
 import (
 	"context"
@@ -22,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-ocf/cqrs/event"
+	"github.com/go-ocf/cqrs/eventbus"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/stretchr/testify/assert"
 )
@@ -53,17 +40,22 @@ func newMockEventHandler() *mockEventHandler {
 	return &mockEventHandler{newEvent: make(chan mockEvent, 10)}
 }
 
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, eu event.EventUnmarshaler) error {
-	if eu.EventType() == "" {
-		return errors.New("cannot determine type of event")
+func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+	var eu event.EventUnmarshaler
+
+	for iter.Next(&eu) {
+		if eu.EventType == "" {
+			return errors.New("cannot determine type of event")
+		}
+		var e mockEvent
+		err := eu.Unmarshal(&e)
+		if err != nil {
+			return err
+		}
+		eh.newEvent <- e
 	}
-	var e mockEvent
-	err := eu.Unmarshal(&e)
-	if err != nil {
-		return err
-	}
-	eh.newEvent <- e
-	return nil
+
+	return iter.Err()
 }
 
 func (eh *mockEventHandler) waitForEvent(timeout time.Duration) (mockEvent, error) {
@@ -86,7 +78,7 @@ func testWaitForAnyEvent(timeout time.Duration, eh1 *mockEventHandler, eh2 *mock
 	}
 }
 
-func testNewSubscription(t *testing.T, ctx context.Context, subscriber Subscriber, subscriptionId string, topics []string) (*mockEventHandler, Observer) {
+func testNewSubscription(t *testing.T, ctx context.Context, subscriber eventbus.Subscriber, subscriptionId string, topics []string) (*mockEventHandler, eventbus.Observer) {
 	t.Log("Subscribe to testNewSubscription")
 	m := newMockEventHandler()
 	ob, err := subscriber.Subscribe(ctx, subscriptionId, topics, m)
@@ -108,7 +100,7 @@ func testNewSubscription(t *testing.T, ctx context.Context, subscriber Subscribe
 //       eventbus.AcceptanceTest(t, ctx, timeout, topics, publisher, subscriber)
 //   }
 //
-func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, topics []string, publisher Publisher, subscriber Subscriber) {
+func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, topics []string, publisher eventbus.Publisher, subscriber eventbus.Subscriber) {
 	//savedEvents := []Event{}
 	AggregateID1 := "aggregateID1"
 	AggregateID2 := "aggregateID2"
@@ -187,33 +179,21 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, to
 	defer func() {
 		err = ob1.Cancel()
 		assert.NoError(t, err)
-		for err := range ob1.Errors() {
-			assert.NoError(t, err)
-		}
 	}()
 	m2, ob2 := testNewSubscription(t, ctx, subscriber, "2", topics[1:2])
 	defer func() {
 		err = ob2.Cancel()
 		assert.NoError(t, err)
-		for err := range ob2.Errors() {
-			assert.NoError(t, err)
-		}
 	}()
 	m3, ob3 := testNewSubscription(t, ctx, subscriber, "shared", topics[0:1])
 	defer func() {
 		err = ob3.Cancel()
 		assert.NoError(t, err)
-		for err := range ob3.Errors() {
-			assert.NoError(t, err)
-		}
 	}()
 	m4, ob4 := testNewSubscription(t, ctx, subscriber, "shared", topics[0:1])
 	defer func() {
 		err = ob4.Cancel()
 		assert.NoError(t, err)
-		for err := range ob4.Errors() {
-			assert.NoError(t, err)
-		}
 	}()
 
 	time.Sleep(time.Second * 5)

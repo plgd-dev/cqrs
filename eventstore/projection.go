@@ -44,17 +44,53 @@ type snapshotModel struct {
 	lastVersion   uint64
 }
 
-func (m *snapshotModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, eventDecoder event.EventUnmarshaler) (applied bool, err error) {
-	m.isEmpty = false
-	m.lastVersion = eventDecoder.Version()
-	switch {
-	case m.snapshotOccur == true:
-		return true, m.model.HandleEvent(ctx, path, eventDecoder)
-	case eventDecoder.EventType() == m.model.SnapshotEventType() || eventDecoder.Version() == 0:
-		m.snapshotOccur = true
-		return true, m.model.HandleEvent(ctx, path, eventDecoder)
+type iterator struct {
+	firstIter   bool
+	firstEvent  event.EventUnmarshaler
+	iter        event.Iter
+	num         int
+	lastVersion uint64
+}
+
+func (i *iterator) Next(e *event.EventUnmarshaler) bool {
+	if i.firstIter {
+		*e = i.firstEvent
+		i.firstIter = false
+		i.num++
+		i.lastVersion = e.Version
+		return true
 	}
-	return false, nil
+
+	if i.iter.Next(e) {
+		i.num++
+		i.lastVersion = e.Version
+		return true
+	}
+	return false
+}
+
+func (i *iterator) Err() error {
+	return i.iter.Err()
+}
+
+func (m *snapshotModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
+	m.isEmpty = false
+	var eu event.EventUnmarshaler
+
+	for iter.Next(&eu) {
+		switch {
+		case eu.EventType == m.model.SnapshotEventType() || eu.Version == 0:
+			i := iterator{
+				firstIter:  true,
+				firstEvent: eu,
+				iter:       iter,
+			}
+			err := m.model.HandleEvent(ctx, path, &i)
+			m.lastVersion = i.lastVersion
+			return i.num, err
+		}
+	}
+	return 0, nil
 }
 
 func (p Projection) loadEvents(ctx context.Context, model Model) (int, uint64, error) {
@@ -68,7 +104,7 @@ func (p Projection) loadEvents(ctx context.Context, model Model) (int, uint64, e
 		}
 	} else {
 		for i := 1; numEvents == 0 && i < 8; i++ {
-			numEvents, err = p.store.LoadLastEvents(ctx, p.path, p.numEventsInSnapshot*i, &sm)
+			numEvents, err = p.store.LoadLatest(ctx, p.path, p.numEventsInSnapshot*i, &sm)
 			if err != nil {
 				return -1, 0, fmt.Errorf("aggregate cannot load last events to model: %v", err)
 			}
