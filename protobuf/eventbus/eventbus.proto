@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package ocf.cloud.cqrs.eventbus;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "github.com/go-ocf/cqrs/protobuf/event/event.proto";
+
+option go_package = "github.com/go-ocf/cqrs/protobuf/eventbus;eventbus";
+
+
+message Event {
+    uint64 version = 1;
+    string event_type = 2;
+    ocf.cloud.cqrs.event.Path path = 3;
+    bytes data = 4;
+}
