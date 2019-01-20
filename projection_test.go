@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-ocf/resources/protobuf/resources"
-	"github.com/go-ocf/resources/protobuf/resources/commands"
+	resources "github.com/go-ocf/resources/protobuf"
+	"github.com/go-ocf/resources/protobuf/commands"
 	"github.com/gofrs/uuid"
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
-	"github.com/go-ocf/resources/protobuf/resources/events"
+	"github.com/go-ocf/resources/protobuf/events"
 	"github.com/stretchr/testify/assert"
 )
 

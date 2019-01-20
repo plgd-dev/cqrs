@@ -191,8 +191,6 @@ func (s *EventStore) Load(ctx context.Context, path protoEvent.Path, eh eventsto
 }
 
 type lastIterator struct {
-	firstIter       bool
-	version         uint64
 	idx             int
 	events          []dbEvent
 	dataUnmarshaler event.UnmarshalerFunc
@@ -201,15 +199,11 @@ type lastIterator struct {
 
 func (i *lastIterator) Next(e *event.EventUnmarshaler) bool {
 	if i.idx < len(i.events) {
-		if i.firstIter {
-			i.version = i.events[i.idx].Version
-			i.firstIter = false
-		} else {
-			if i.version+1 != i.events[i.idx].Version {
+		if i.idx > 0 {
+			if i.events[i.idx-1].Version+1 != i.events[i.idx].Version {
 				i.err = errors.New("invalid event version stored in eventstore")
 				return false
 			}
-			i.version++
 		}
 
 		e.Version = i.events[i.idx].Version
@@ -254,7 +248,6 @@ func (s *EventStore) LoadLatest(ctx context.Context, path protoEvent.Path, count
 	}
 
 	i := lastIterator{
-		firstIter:       true,
 		events:          events,
 		dataUnmarshaler: s.dataUnmarshaler,
 	}

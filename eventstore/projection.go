@@ -49,10 +49,12 @@ type iterator struct {
 	num         int
 	lastVersion uint64
 	model       Model
+	isEmpty     bool
 }
 
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
 	for i.iter.Next(e) {
+		i.isEmpty = false
 		if e.EventType == i.model.SnapshotEventType() || e.Version == 0 || i.num > 0 {
 			i.num++
 			i.lastVersion = e.Version
@@ -67,13 +69,15 @@ func (i *iterator) Err() error {
 }
 
 func (m *snapshotModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
-	m.isEmpty = false
+
 	i := iterator{
-		model: m.model,
-		iter:  iter,
+		model:   m.model,
+		iter:    iter,
+		isEmpty: true,
 	}
 	err := m.model.HandleEvent(ctx, path, &i)
 	m.lastVersion = i.lastVersion
+	m.isEmpty = i.isEmpty
 	return i.num, err
 }
 
