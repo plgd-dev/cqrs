@@ -71,22 +71,32 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 	return s, nil
 }
 
-// Save save events to path.
-func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error) {
-	if len(events) == 0 {
-		return false, errors.New("cannot save empty events")
-	}
-	if path.AggregateId == "" {
-		return false, errors.New("cannot save events without AggregateId")
-	}
-
+func (s *EventStore) saveEvent(ctx context.Context, path protoEvent.Path, event event.Event) (concurrencyException bool, err error) {
 	sess := s.session.Copy()
 	defer sess.Close()
 
-	ops := make([]txn.Op, 0, len(events))
+	e, err := makeDBEvent(ctx, path.AggregateId, event, s.dataMarshaler)
+	if err != nil {
+		return false, err
+	}
+	cname := Path2CName(path)
+	if err := sess.DB(s.DBName()).C(cname).Insert(e); err != nil {
+		if mgo.IsDup(err) {
+			return true, fmt.Errorf("cannot save events - concurrency exception: %v", err)
+		}
+		return false, fmt.Errorf("cannot save events: %v", err)
+	}
+	return false, nil
+}
+
+func (s *EventStore) saveEvents(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error) {
+	sess := s.session.Copy()
+	defer sess.Close()
+
 	firstEvent := true
 	version := events[0].Version()
 	cname := Path2CName(path)
+	ops := make([]txn.Op, 0, len(events))
 	for _, event := range events {
 		if path.AggregateId != event.AggregateId() {
 			return false, errors.New("cannot append event with no valid AggregateId")
@@ -123,6 +133,20 @@ func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []ev
 		return true, fmt.Errorf("cannot save events: %v", err)
 	}
 	return false, err
+}
+
+// Save save events to path.
+func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error) {
+	if len(events) == 0 {
+		return false, errors.New("cannot save empty events")
+	}
+	if path.AggregateId == "" {
+		return false, errors.New("cannot save events without AggregateId")
+	}
+	if len(events) > 1 {
+		return s.saveEvents(ctx, path, events)
+	}
+	return s.saveEvent(ctx, path, events[0])
 }
 
 type iterator struct {
