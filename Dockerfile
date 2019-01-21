@@ -6,6 +6,5 @@ RUN apk add --no-cache curl git build-base && \
 
 ENV MAINDIR $GOPATH/src/github.com/go-ocf/cqrs
 WORKDIR $MAINDIR
-COPY Gopkg.toml Gopkg.lock ./
-RUN dep ensure -v --vendor-only
 COPY . .
+RUN dep ensure -v
