@@ -82,7 +82,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:3c16807e9111913256c6e5eb37678cdf967d2f019f59c2cd9450077470ee20e7"
+  digest = "1:d94c7461c25d80d26faa3189e13a97777b770af0b7d91dc8b8d5e198a7b0c388"
   name = "github.com/go-ocf/resource-aggregate"
   packages = [
     "protobuf",
@@ -90,7 +90,7 @@
     "protobuf/events",
   ]
   pruneopts = "UT"
-  revision = "6dfffc11c9682dca22b70c9094df6c39a7fecaaf"
+  revision = "1e995ad9b46dc8e4e6fa62dc92b02792e4902280"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
