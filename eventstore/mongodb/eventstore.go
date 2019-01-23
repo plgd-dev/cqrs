@@ -160,27 +160,27 @@ type iterator struct {
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
 	var event dbEvent
 
-	if i.iter.Next(&event) {
-		if i.firstIter {
-			i.version = event.Version
-			i.firstIter = false
-		} else {
-			if i.version+1 != event.Version {
-				i.err = errors.New("invalid event version stored in eventstore")
-				return false
-			}
-			i.version++
-		}
-
-		e.Version = event.Version
-		e.AggregateId = event.AggregateId
-		e.EventType = event.EventType
-		e.Unmarshal = func(v interface{}) error {
-			return i.dataUnmarshaler(event.Data.Data, v)
-		}
-		return true
+	if !i.iter.Next(&event) {
+		return false
 	}
-	return false
+	if i.firstIter {
+		i.version = event.Version
+		i.firstIter = false
+	} else {
+		if i.version+1 != event.Version {
+			i.err = errors.New("invalid event version stored in eventstore")
+			return false
+		}
+		i.version++
+	}
+
+	e.Version = event.Version
+	e.AggregateId = event.AggregateId
+	e.EventType = event.EventType
+	e.Unmarshal = func(v interface{}) error {
+		return i.dataUnmarshaler(event.Data.Data, v)
+	}
+	return true
 }
 
 func (i *iterator) Err() error {
@@ -214,36 +214,37 @@ func (s *EventStore) Load(ctx context.Context, path protoEvent.Path, eh eventsto
 	return numEvents, err
 }
 
-type lastIterator struct {
+type latestEventsIterator struct {
 	idx             int
 	events          []dbEvent
 	dataUnmarshaler event.UnmarshalerFunc
 	err             error
 }
 
-func (i *lastIterator) Next(e *event.EventUnmarshaler) bool {
-	if i.idx < len(i.events) {
-		if i.idx > 0 {
-			if i.events[i.idx-1].Version+1 != i.events[i.idx].Version {
-				i.err = errors.New("invalid event version stored in eventstore")
-				return false
-			}
-		}
-
-		e.Version = i.events[i.idx].Version
-		e.AggregateId = i.events[i.idx].AggregateId
-		e.EventType = i.events[i.idx].EventType
-		idx := i.idx
-		e.Unmarshal = func(v interface{}) error {
-			return i.dataUnmarshaler(i.events[idx].Data.Data, v)
-		}
-		i.idx++
-		return true
+func (i *latestEventsIterator) Next(e *event.EventUnmarshaler) bool {
+	if i.idx >= len(i.events) {
+		return false
 	}
-	return false
+
+	if i.idx > 0 {
+		if i.events[i.idx-1].Version+1 != i.events[i.idx].Version {
+			i.err = errors.New("invalid event version stored in eventstore")
+			return false
+		}
+	}
+
+	e.Version = i.events[i.idx].Version
+	e.AggregateId = i.events[i.idx].AggregateId
+	e.EventType = i.events[i.idx].EventType
+	idx := i.idx
+	e.Unmarshal = func(v interface{}) error {
+		return i.dataUnmarshaler(i.events[idx].Data.Data, v)
+	}
+	i.idx++
+	return true
 }
 
-func (i *lastIterator) Err() error {
+func (i *latestEventsIterator) Err() error {
 	return i.err
 }
 
@@ -271,7 +272,7 @@ func (s *EventStore) LoadLatest(ctx context.Context, path protoEvent.Path, count
 		return 0, fmt.Errorf("cannot load last events: %v", err)
 	}
 
-	i := lastIterator{
+	i := latestEventsIterator{
 		events:          events,
 		dataUnmarshaler: s.dataUnmarshaler,
 	}
