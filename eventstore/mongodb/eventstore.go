@@ -71,22 +71,32 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 	return s, nil
 }
 
-// Save save events to path.
-func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error) {
-	if len(events) == 0 {
-		return false, errors.New("cannot save empty events")
-	}
-	if path.AggregateId == "" {
-		return false, errors.New("cannot save events without AggregateId")
-	}
-
+func (s *EventStore) saveEvent(ctx context.Context, path protoEvent.Path, event event.Event) (concurrencyException bool, err error) {
 	sess := s.session.Copy()
 	defer sess.Close()
 
-	ops := make([]txn.Op, 0, len(events))
+	e, err := makeDBEvent(ctx, path.AggregateId, event, s.dataMarshaler)
+	if err != nil {
+		return false, err
+	}
+	cname := Path2CName(path)
+	if err := sess.DB(s.DBName()).C(cname).Insert(e); err != nil {
+		if mgo.IsDup(err) {
+			return true, fmt.Errorf("cannot save events - concurrency exception: %v", err)
+		}
+		return false, fmt.Errorf("cannot save events: %v", err)
+	}
+	return false, nil
+}
+
+func (s *EventStore) saveEvents(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error) {
+	sess := s.session.Copy()
+	defer sess.Close()
+
 	firstEvent := true
 	version := events[0].Version()
 	cname := Path2CName(path)
+	ops := make([]txn.Op, 0, len(events))
 	for _, event := range events {
 		if path.AggregateId != event.AggregateId() {
 			return false, errors.New("cannot append event with no valid AggregateId")
@@ -125,6 +135,20 @@ func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []ev
 	return false, err
 }
 
+// Save save events to path.
+func (s *EventStore) Save(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error) {
+	if len(events) == 0 {
+		return false, errors.New("cannot save empty events")
+	}
+	if path.AggregateId == "" {
+		return false, errors.New("cannot save events without AggregateId")
+	}
+	if len(events) > 1 {
+		return s.saveEvents(ctx, path, events)
+	}
+	return s.saveEvent(ctx, path, events[0])
+}
+
 type iterator struct {
 	firstIter       bool
 	version         uint64
@@ -136,27 +160,27 @@ type iterator struct {
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
 	var event dbEvent
 
-	if i.iter.Next(&event) {
-		if i.firstIter {
-			i.version = event.Version
-			i.firstIter = false
-		} else {
-			if i.version+1 != event.Version {
-				i.err = errors.New("invalid event version stored in eventstore")
-				return false
-			}
-			i.version++
-		}
-
-		e.Version = event.Version
-		e.AggregateId = event.AggregateId
-		e.EventType = event.EventType
-		e.Unmarshal = func(v interface{}) error {
-			return i.dataUnmarshaler(event.Data.Data, v)
-		}
-		return true
+	if !i.iter.Next(&event) {
+		return false
 	}
-	return false
+	if i.firstIter {
+		i.version = event.Version
+		i.firstIter = false
+	} else {
+		if i.version+1 != event.Version {
+			i.err = errors.New("invalid event version stored in eventstore")
+			return false
+		}
+		i.version++
+	}
+
+	e.Version = event.Version
+	e.AggregateId = event.AggregateId
+	e.EventType = event.EventType
+	e.Unmarshal = func(v interface{}) error {
+		return i.dataUnmarshaler(event.Data.Data, v)
+	}
+	return true
 }
 
 func (i *iterator) Err() error {
@@ -190,42 +214,37 @@ func (s *EventStore) Load(ctx context.Context, path protoEvent.Path, eh eventsto
 	return numEvents, err
 }
 
-type lastIterator struct {
-	firstIter       bool
-	version         uint64
+type latestEventsIterator struct {
 	idx             int
 	events          []dbEvent
 	dataUnmarshaler event.UnmarshalerFunc
 	err             error
 }
 
-func (i *lastIterator) Next(e *event.EventUnmarshaler) bool {
-	if i.idx < len(i.events) {
-		if i.firstIter {
-			i.version = i.events[i.idx].Version
-			i.firstIter = false
-		} else {
-			if i.version+1 != i.events[i.idx].Version {
-				i.err = errors.New("invalid event version stored in eventstore")
-				return false
-			}
-			i.version++
-		}
-
-		e.Version = i.events[i.idx].Version
-		e.AggregateId = i.events[i.idx].AggregateId
-		e.EventType = i.events[i.idx].EventType
-		idx := i.idx
-		e.Unmarshal = func(v interface{}) error {
-			return i.dataUnmarshaler(i.events[idx].Data.Data, v)
-		}
-		i.idx++
-		return true
+func (i *latestEventsIterator) Next(e *event.EventUnmarshaler) bool {
+	if i.idx >= len(i.events) {
+		return false
 	}
-	return false
+
+	if i.idx > 0 {
+		if i.events[i.idx-1].Version+1 != i.events[i.idx].Version {
+			i.err = errors.New("invalid event version stored in eventstore")
+			return false
+		}
+	}
+
+	e.Version = i.events[i.idx].Version
+	e.AggregateId = i.events[i.idx].AggregateId
+	e.EventType = i.events[i.idx].EventType
+	idx := i.idx
+	e.Unmarshal = func(v interface{}) error {
+		return i.dataUnmarshaler(i.events[idx].Data.Data, v)
+	}
+	i.idx++
+	return true
 }
 
-func (i *lastIterator) Err() error {
+func (i *latestEventsIterator) Err() error {
 	return i.err
 }
 
@@ -253,8 +272,7 @@ func (s *EventStore) LoadLatest(ctx context.Context, path protoEvent.Path, count
 		return 0, fmt.Errorf("cannot load last events: %v", err)
 	}
 
-	i := lastIterator{
-		firstIter:       true,
+	i := latestEventsIterator{
 		events:          events,
 		dataUnmarshaler: s.dataUnmarshaler,
 	}

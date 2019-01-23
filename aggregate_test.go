@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-ocf/resources/protobuf/resources"
-	"github.com/go-ocf/resources/protobuf/resources/commands"
+	resources "github.com/go-ocf/resource-aggregate/protobuf"
+	"github.com/go-ocf/resource-aggregate/protobuf/commands"
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/go-ocf/kit/http"
-	"github.com/go-ocf/resources/protobuf/resources/events"
+	"github.com/go-ocf/resource-aggregate/protobuf/events"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -93,18 +93,18 @@ func (rs *ResourceStateSnapshotTaken) EventType() string {
 }
 
 func (rs *ResourceStateSnapshotTaken) HandleEventResourcePublished(ctx context.Context, pub ResourcePublished) error {
-	if rs.ResourceState.IsPublished {
+	if rs.IsPublished {
 		return fmt.Errorf("already published")
 	}
-	rs.ResourceState.IsPublished = true
+	rs.IsPublished = true
 	return nil
 }
 
 func (rs *ResourceStateSnapshotTaken) HandleEventResourceUnpublished(ctx context.Context, pub ResourceUnpublished) error {
-	if !rs.ResourceState.IsPublished {
+	if !rs.IsPublished {
 		return fmt.Errorf("already published")
 	}
-	rs.ResourceState.IsPublished = false
+	rs.IsPublished = false
 	return nil
 }
 
@@ -296,7 +296,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	a, err := NewAggregate(path, store, 1, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 

@@ -42,8 +42,8 @@
   name = "github.com/go-ocf/kit"
 
 [[constraint]]
-  branch = "commands-deviceid"
-  name = "github.com/go-ocf/resources"
+  branch = "master"
+  name = "github.com/go-ocf/resource-aggregate"
 
 [[constraint]]
   name = "github.com/gofrs/uuid"

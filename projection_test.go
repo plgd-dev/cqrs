@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-ocf/resources/protobuf/resources"
-	"github.com/go-ocf/resources/protobuf/resources/commands"
+	resources "github.com/go-ocf/resource-aggregate/protobuf"
+	"github.com/go-ocf/resource-aggregate/protobuf/commands"
 	"github.com/gofrs/uuid"
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
-	"github.com/go-ocf/resources/protobuf/resources/events"
+	"github.com/go-ocf/resource-aggregate/protobuf/events"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -137,7 +137,7 @@ func TestProjection(t *testing.T) {
 	*/
 
 	a1, err := NewAggregate(path1, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 
@@ -146,7 +146,7 @@ func TestProjection(t *testing.T) {
 	assert.NotNil(t, evs)
 
 	a2, err := NewAggregate(path2, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 
@@ -169,7 +169,7 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 
 	a3, err := NewAggregate(path3, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, ResourceState: &resources.ResourceState{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
 

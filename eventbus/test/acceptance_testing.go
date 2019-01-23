@@ -84,6 +84,9 @@ func testNewSubscription(t *testing.T, ctx context.Context, subscriber eventbus.
 	ob, err := subscriber.Subscribe(ctx, subscriptionId, topics, m)
 	assert.NoError(t, err)
 	assert.NotNil(t, ob)
+	if ob == nil {
+		return nil, nil
+	}
 	return m, ob
 }
 
@@ -163,34 +166,34 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, to
 
 	// Add handlers and observers.
 	t.Log("Subscribe to first topic")
-	m0, ob0 := testNewSubscription(t, ctx, subscriber, "0", topics[0:1])
+	m0, ob0 := testNewSubscription(t, ctx, subscriber, "sub-0", topics[0:1])
 
 	err = publisher.Publish(ctx, topics[0:1], aggregateID1Path, eventsToPublish[1])
 	assert.NoError(t, err)
 
-	event, err := m0.waitForEvent(timeout)
+	event0, err := m0.waitForEvent(timeout)
 	assert.NoError(t, err)
-	assert.Equal(t, eventsToPublish[1], event)
+	assert.Equal(t, eventsToPublish[1], event0)
 
 	err = ob0.Cancel()
 	assert.NoError(t, err)
 	t.Log("Subscribe more observers")
-	m1, ob1 := testNewSubscription(t, ctx, subscriber, "1", topics[1:2])
+	m1, ob1 := testNewSubscription(t, ctx, subscriber, "sub-1", topics[1:2])
 	defer func() {
 		err = ob1.Cancel()
 		assert.NoError(t, err)
 	}()
-	m2, ob2 := testNewSubscription(t, ctx, subscriber, "2", topics[1:2])
+	m2, ob2 := testNewSubscription(t, ctx, subscriber, "sub-2", topics[1:2])
 	defer func() {
 		err = ob2.Cancel()
 		assert.NoError(t, err)
 	}()
-	m3, ob3 := testNewSubscription(t, ctx, subscriber, "shared", topics[0:1])
+	m3, ob3 := testNewSubscription(t, ctx, subscriber, "sub-shared", topics[0:1])
 	defer func() {
 		err = ob3.Cancel()
 		assert.NoError(t, err)
 	}()
-	m4, ob4 := testNewSubscription(t, ctx, subscriber, "shared", topics[0:1])
+	m4, ob4 := testNewSubscription(t, ctx, subscriber, "sub-shared", topics[0:1])
 	defer func() {
 		err = ob4.Cancel()
 		assert.NoError(t, err)
@@ -201,15 +204,15 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, to
 	err = publisher.Publish(ctx, topics, aggregateID1Path, eventsToPublish[2])
 	assert.NoError(t, err)
 
-	event, err = m1.waitForEvent(timeout)
+	event1, err := m1.waitForEvent(timeout)
 	assert.NoError(t, err)
-	assert.Equal(t, eventsToPublish[2], event)
+	assert.Equal(t, eventsToPublish[2], event1)
 
-	event, err = m2.waitForEvent(timeout)
+	event2, err := m2.waitForEvent(timeout)
 	assert.NoError(t, err)
-	assert.Equal(t, eventsToPublish[2], event)
+	assert.Equal(t, eventsToPublish[2], event2)
 
-	event, err = testWaitForAnyEvent(timeout, m3, m4)
+	event3, err := testWaitForAnyEvent(timeout, m3, m4)
 	assert.NoError(t, err)
-	assert.Equal(t, eventsToPublish[2], event)
+	assert.Equal(t, eventsToPublish[2], event3)
 }

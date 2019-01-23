@@ -187,8 +187,8 @@ func (pp projectPathsHandler) HandlePaths(ctx context.Context, iter eventstore.P
 			errors = append(errors, err)
 		}
 		pp.projection.lock.Lock()
-		defer pp.projection.lock.Unlock()
 		pp.projection.aggregateProjections[path2string(path)] = model.(*aggregateProjectionModel)
+		pp.projection.lock.Unlock()
 	}
 	if len(errors) > 0 {
 		return fmt.Errorf("%v", errors)

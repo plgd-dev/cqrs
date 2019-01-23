@@ -81,16 +81,16 @@
   revision = "dd56d824b49746ff155934bb988101a3e5b3b8be"
 
 [[projects]]
-  branch = "commands-deviceid"
-  digest = "1:c482a8fbd2d977817258f06f3ea0c969b4f78fee1cbfd112c2e41a67eb1badc7"
-  name = "github.com/go-ocf/resources"
+  branch = "master"
+  digest = "1:d94c7461c25d80d26faa3189e13a97777b770af0b7d91dc8b8d5e198a7b0c388"
+  name = "github.com/go-ocf/resource-aggregate"
   packages = [
-    "protobuf/resources",
-    "protobuf/resources/commands",
-    "protobuf/resources/events",
+    "protobuf",
+    "protobuf/commands",
+    "protobuf/events",
   ]
   pruneopts = "UT"
-  revision = "72d37fd2d2fd08983db35fe202b3b70bc43824d1"
+  revision = "1e995ad9b46dc8e4e6fa62dc92b02792e4902280"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
@@ -205,9 +205,9 @@
     "github.com/globalsign/mgo/bson",
     "github.com/globalsign/mgo/txn",
     "github.com/go-ocf/kit/http",
-    "github.com/go-ocf/resources/protobuf/resources",
-    "github.com/go-ocf/resources/protobuf/resources/commands",
-    "github.com/go-ocf/resources/protobuf/resources/events",
+    "github.com/go-ocf/resource-aggregate/protobuf",
+    "github.com/go-ocf/resource-aggregate/protobuf/commands",
+    "github.com/go-ocf/resource-aggregate/protobuf/events",
     "github.com/gofrs/uuid",
     "github.com/gogo/protobuf/gogoproto",
     "github.com/gogo/protobuf/proto",
