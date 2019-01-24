@@ -10,6 +10,7 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
+	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -103,7 +104,7 @@ func testNewSubscription(t *testing.T, ctx context.Context, subscriber eventbus.
 //       eventbus.AcceptanceTest(t, ctx, timeout, topics, publisher, subscriber)
 //   }
 //
-func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, topics []string, publisher eventbus.Publisher, subscriber eventbus.Subscriber) {
+func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, waitForSubscription time.Duration, topics []string, publisher eventbus.Publisher, subscriber eventbus.Subscriber) {
 	//savedEvents := []Event{}
 	AggregateID1 := "aggregateID1"
 	AggregateID2 := "aggregateID2"
@@ -163,10 +164,12 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, to
 	t.Log("Without subscription")
 	err := publisher.Publish(ctx, topics[0:1], aggregateID1Path, eventsToPublish[0])
 	assert.NoError(t, err)
+	time.Sleep(waitForSubscription)
 
 	// Add handlers and observers.
 	t.Log("Subscribe to first topic")
 	m0, ob0 := testNewSubscription(t, ctx, subscriber, "sub-0", topics[0:1])
+	time.Sleep(waitForSubscription)
 
 	err = publisher.Publish(ctx, topics[0:1], aggregateID1Path, eventsToPublish[1])
 	assert.NoError(t, err)
@@ -175,31 +178,31 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, to
 	assert.NoError(t, err)
 	assert.Equal(t, eventsToPublish[1], event0)
 
-	err = ob0.Cancel()
+	err = ob0.Close()
 	assert.NoError(t, err)
 	t.Log("Subscribe more observers")
 	m1, ob1 := testNewSubscription(t, ctx, subscriber, "sub-1", topics[1:2])
 	defer func() {
-		err = ob1.Cancel()
+		err = ob1.Close()
 		assert.NoError(t, err)
 	}()
 	m2, ob2 := testNewSubscription(t, ctx, subscriber, "sub-2", topics[1:2])
 	defer func() {
-		err = ob2.Cancel()
+		err = ob2.Close()
 		assert.NoError(t, err)
 	}()
 	m3, ob3 := testNewSubscription(t, ctx, subscriber, "sub-shared", topics[0:1])
 	defer func() {
-		err = ob3.Cancel()
+		err = ob3.Close()
 		assert.NoError(t, err)
 	}()
 	m4, ob4 := testNewSubscription(t, ctx, subscriber, "sub-shared", topics[0:1])
 	defer func() {
-		err = ob4.Cancel()
+		err = ob4.Close()
 		assert.NoError(t, err)
 	}()
 
-	time.Sleep(time.Second * 5)
+	time.Sleep(waitForSubscription)
 
 	err = publisher.Publish(ctx, topics, aggregateID1Path, eventsToPublish[2])
 	assert.NoError(t, err)
@@ -215,4 +218,20 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, to
 	event3, err := testWaitForAnyEvent(timeout, m3, m4)
 	assert.NoError(t, err)
 	assert.Equal(t, eventsToPublish[2], event3)
+
+	topic := "new_topic_" + uuid.Must(uuid.NewV4()).String()
+	topics = append(topics, topic)
+	err = ob4.SetTopics(ctx, topics)
+	time.Sleep(waitForSubscription)
+	assert.NoError(t, err)
+
+	err = publisher.Publish(ctx, []string{topic}, aggregateID1Path, eventsToPublish[3])
+	assert.NoError(t, err)
+
+	event4, err := m4.waitForEvent(timeout)
+	assert.NoError(t, err)
+	assert.Equal(t, eventsToPublish[3], event4)
+
+	err = ob4.SetTopics(ctx, nil)
+	assert.NoError(t, err)
 }

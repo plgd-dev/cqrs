@@ -14,6 +14,7 @@ import (
 	"github.com/gofrs/uuid"
 )
 
+// Model define interface of projectionModel.
 type Model interface {
 	eventstore.Model
 }
@@ -233,39 +234,35 @@ func (p projectionHandler) HandleEvent(ctx context.Context, path protoEvent.Path
 
 	if ap != nil {
 		return ap.HandleEvent(ctx, path, iter)
-	} else {
-		return p.projection.Project(path)
 	}
+	return p.projection.Project(path)
 }
 
-// SetTopicsToObserve set topics for observation for update events.
-func (p *Projection) SetTopicsToObserve(topics []string) error {
+// SubscribeTo set topics for observation for update events.
+func (p *Projection) SubscribeTo(topics []string) error {
 	if p.subscriber == nil {
 		return fmt.Errorf("projection doesn't support subscribe to topics")
 	}
-
-	var newObs eventbus.Observer
-	if len(topics) > 0 {
-		var err error
-		newObs, err = p.subscriber.Subscribe(p.ctx, p.subscriptionId, topics, projectionHandler{p})
-		if err != nil {
-			return fmt.Errorf("cannot set topics to observe: %v", err)
-		}
-	}
-
-	var oldObs eventbus.Observer
 	p.lock.Lock()
-	oldObs = p.observer
-	p.observer = newObs
-	p.lock.Unlock()
-	if oldObs != nil {
-		return oldObs.Cancel()
+	if p.observer == nil {
+		observer, err := p.subscriber.Subscribe(p.ctx, p.subscriptionId, topics, projectionHandler{p})
+		if err != nil {
+			p.lock.Unlock()
+			return fmt.Errorf("projection cannot subscribe to topics: %v", err)
+		}
+		p.observer = observer
 	}
+	err := p.observer.SetTopics(p.ctx, topics)
+	p.lock.Unlock()
+	if err != nil {
+		return fmt.Errorf("projection cannot set topics: %v", err)
+	}
+
 	return nil
 }
 
-// Cancel cancel projection.
-func (p *Projection) Cancel() error {
+// Close cancel projection.
+func (p *Projection) Close() error {
 	p.cancel()
-	return p.observer.Cancel()
+	return p.observer.Close()
 }

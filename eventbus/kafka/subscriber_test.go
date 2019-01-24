@@ -26,6 +26,7 @@ func TestSubscriber(t *testing.T) {
 	config.Producer.Flush.MaxMessages = 1
 
 	timeout := time.Second * 30
+	waitForSubscription := time.Second * 5
 
 	publisher, err := NewPublisher(
 		[]string{broker},
@@ -42,5 +43,5 @@ func TestSubscriber(t *testing.T) {
 	)
 	assert.NotNil(t, subscriber)
 
-	test.AcceptanceTest(t, context.Background(), timeout, topics, publisher, subscriber)
+	test.AcceptanceTest(t, context.Background(), timeout, waitForSubscription, topics, publisher, subscriber)
 }
