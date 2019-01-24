@@ -22,6 +22,7 @@ import (
 
 func TestProjection(t *testing.T) {
 	numEventsInSnapshot := 1
+	waitForSubscription := time.Second * 5
 
 	// Connect to localhost if not running inside docker
 	broker := os.Getenv("KAFKA_EMULATOR_BOOTSTRAP_SERVER")
@@ -165,8 +166,10 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(projection.aggregateProjections))
 
-	err = projection.SetTopicsToObserve(topics)
+	err = projection.SubscribeTo(topics)
 	assert.NoError(t, err)
+
+	time.Sleep(waitForSubscription)
 
 	a3, err := NewAggregate(path3, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
@@ -181,7 +184,6 @@ func TestProjection(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	time.Sleep(time.Second)
 	projection.lock.Lock()
 	assert.Equal(t, 3, len(projection.aggregateProjections))
 	projection.lock.Unlock()
@@ -194,8 +196,10 @@ func TestProjection(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	err = projection.SetTopicsToObserve(topics[0:1])
+	err = projection.SubscribeTo(topics[0:1])
 	assert.NoError(t, err)
+
+	time.Sleep(waitForSubscription)
 
 	err = projection.Forget(path3)
 	assert.NoError(t, err)
@@ -213,8 +217,11 @@ func TestProjection(t *testing.T) {
 	assert.Equal(t, 2, len(projection.aggregateProjections))
 	projection.lock.Unlock()
 
-	err = projection.SetTopicsToObserve(nil)
+	err = projection.SubscribeTo(nil)
 	assert.NoError(t, err)
+
+	time.Sleep(waitForSubscription)
+
 	evs, err = a1.HandleCommand(ctx, commandPub1)
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
@@ -222,6 +229,7 @@ func TestProjection(t *testing.T) {
 		err = publisher.Publish(ctx, topics, path1, e)
 		assert.NoError(t, err)
 	}
+
 	projection.lock.Lock()
 	assert.Equal(t, 2, len(projection.aggregateProjections))
 	projection.lock.Unlock()

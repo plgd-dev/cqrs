@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 
@@ -24,14 +23,17 @@ type Subscriber struct {
 
 //Observer handles events from kafka
 type Observer struct {
+	subscriptionId  string
+	topics          []string
+	client          *cluster.Client
 	consumer        *cluster.Consumer
 	ctx             context.Context
 	cancel          context.CancelFunc
-	errCh           chan error
 	dataUnmarshaler event.UnmarshalerFunc
 	eventHandler    event.EventHandler
 	wg              sync.WaitGroup
 	errFunc         ErrFunc
+	lock            sync.Mutex
 }
 
 // ErrFunc used by observer to report error from observation
@@ -62,70 +64,89 @@ func NewSubscriber(brokers []string, config *sarama.Config, eventUnmarshaler eve
 
 // Subscribe creates a observer that listen on events from topics.
 func (b *Subscriber) Subscribe(ctx context.Context, subscriptionID string, topics []string, eh event.EventHandler) (eventbus.Observer, error) {
-	observer, err := b.newObservation(ctx, subscriptionID, topics, eh)
+	observer, err := b.newObservation(ctx, subscriptionID, eh)
 	if err != nil {
 		return nil, fmt.Errorf("cannot observe: %v", err)
 	}
 
-	err = observer.run(ctx)
+	err = observer.SetTopics(ctx, topics)
 	if err != nil {
 		return nil, fmt.Errorf("cannot run observation: %v", err)
 	}
 	return observer, nil
 }
 
-func (b *Subscriber) newObservation(ctx context.Context, subscriptionID string, topics []string, eh event.EventHandler) (*Observer, error) {
+func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, eh event.EventHandler) (*Observer, error) {
 	config := cluster.NewConfig()
 	config.Config = *b.config
 	config.Consumer.Return.Errors = true
-	config.Group.Return.Notifications = true
+	config.Group.Return.Notifications = false
 
-	consumer, err := cluster.NewConsumer(b.brokers, subscriptionID, topics, config)
+	client, err := cluster.NewClient(b.brokers, config)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create consumer for subscription: %v", err)
+		return nil, fmt.Errorf("cannot connect client for subscription: %v", err)
 	}
-	obsCtx, obsCancel := context.WithCancel(ctx)
 	return &Observer{
-		consumer:        consumer,
-		ctx:             obsCtx,
-		cancel:          obsCancel,
-		errCh:           make(chan error),
+		client:          client,
+		subscriptionId:  subscriptionId,
 		dataUnmarshaler: b.dataUnmarshaler,
 		eventHandler:    eh,
 		errFunc:         b.errFunc,
 	}, nil
 }
 
-// Cancel cancel observation and close connection to kafka.
-func (o *Observer) Cancel() error {
-	o.cancel()
+func (o *Observer) cleanUp() {
+	if o.cancel != nil {
+		o.cancel()
+	}
 	o.wg.Wait()
-	close(o.errCh)
-	return o.consumer.Close()
+	if o.consumer != nil {
+		o.consumer.Close()
+	}
+	o.consumer = nil
+}
+
+func (o *Observer) SetTopics(ctx context.Context, topics []string) error {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+	o.cleanUp()
+	o.topics = topics
+
+	//observer just stop watching topics
+	if len(topics) == 0 {
+		return nil
+	}
+
+	consumer, err := cluster.NewConsumerFromClient(o.client, o.subscriptionId, topics)
+	if err != nil {
+		return fmt.Errorf("cannot create consumer for subscription: %v", err)
+	}
+	obsCtx, obsCancel := context.WithCancel(ctx)
+	o.topics = topics
+	o.consumer = consumer
+	o.ctx = obsCtx
+	o.cancel = obsCancel
+	return o.run(ctx)
+}
+
+// Close cancel observation and close connection to kafka.
+func (o *Observer) Close() error {
+	o.lock.Lock()
+	o.cleanUp()
+	o.lock.Unlock()
+	return o.client.Close()
 }
 
 func (o *Observer) run(ctx context.Context) error {
-	sync := make(chan interface{})
 	o.wg.Add(1)
-	go func(sync chan interface{}) {
+	go func() {
 		defer o.wg.Done()
-		o.handle(func() {
-			if sync != nil {
-				close(sync)
-				sync = nil
-			}
-		})
-	}(sync)
-	select {
-	case <-sync:
-	case <-ctx.Done():
-		o.Cancel()
-		return errors.New("unexpected end of initialization of observation")
-	}
+		o.handle()
+	}()
 	return nil
 }
 
-func (o *Observer) handle(rebalanceOk func()) {
+func (o *Observer) handle() {
 	for {
 		select {
 		case msg, ok := <-o.consumer.Messages():
@@ -134,10 +155,6 @@ func (o *Observer) handle(rebalanceOk func()) {
 				if err != nil {
 					o.errFunc(err)
 				}
-			}
-		case ntf := <-o.consumer.Notifications():
-			if ntf.Type == cluster.RebalanceOK {
-				rebalanceOk()
 			}
 		case err := <-o.consumer.Errors():
 			o.errFunc(fmt.Errorf("could not receive: %v", err))

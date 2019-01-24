@@ -19,5 +19,6 @@ type Subscriber interface {
 
 // Observer handles events from observation and forward them to event.EventHandler.
 type Observer interface {
-	Cancel() error
+	Close() error
+	SetTopics(ctx context.Context, topics []string) error
 }
