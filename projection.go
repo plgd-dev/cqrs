@@ -87,28 +87,29 @@ func path2string(path protoEvent.Path) string {
 func (ap *aggregateProjectionModel) SnapshotEventType() string { return ap.model.SnapshotEventType() }
 
 type iterator struct {
-	ap                    *aggregateProjectionModel
 	iter                  event.Iter
 	num                   int
-	lastVersion           uint64
+	version               uint64
+	snapshotEventType     string
+	hasSnapshot           bool
 	needToLoadFromVersion bool
 }
 
 func (i *iterator) Next(e *event.EventUnmarshaler) bool {
 	if i.iter.Next(e) {
 		switch {
-		case e.Version == 0 || i.ap.SnapshotEventType() == e.EventType:
+		case e.Version == 0 || i.snapshotEventType == e.EventType:
 			//it is first event or snapshot accept it
-			i.ap.hasSnapshot = true
-		case e.Version == i.ap.version+1 && i.ap.hasSnapshot:
-		case e.Version <= i.ap.version && i.ap.hasSnapshot:
+			i.hasSnapshot = true
+		case e.Version == i.version+1 && i.hasSnapshot:
+		case e.Version <= i.version && i.hasSnapshot:
 			//ignore event - it was already applied
-			return false
+			return i.Next(e)
 		default:
 			i.needToLoadFromVersion = true
 			return false
 		}
-		i.lastVersion = e.Version
+		i.version = e.Version
 		i.num++
 		return true
 	}
@@ -121,12 +122,16 @@ func (i *iterator) Err() error {
 
 func (ap *aggregateProjectionModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
 	i := iterator{
-		ap:   ap,
-		iter: iter,
+		version:     ap.version,
+		hasSnapshot: ap.hasSnapshot,
+
+		iter:              iter,
+		snapshotEventType: ap.SnapshotEventType(),
 	}
 	err := ap.model.HandleEvent(ctx, path, &i)
 	if err != nil {
-		ap.version = i.lastVersion
+		ap.version = i.version
+		ap.hasSnapshot = i.hasSnapshot
 	}
 	return i.num, err
 }
@@ -136,16 +141,20 @@ func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoE
 	defer ap.lock.Unlock()
 
 	i := iterator{
-		ap:   ap,
-		iter: iter,
+		version:     ap.version,
+		hasSnapshot: ap.hasSnapshot,
+
+		iter:              iter,
+		snapshotEventType: ap.SnapshotEventType(),
 	}
 	err := ap.model.HandleEvent(ctx, path, &i)
 	if err != nil {
 		return fmt.Errorf("cannot handle event to aggregate projection model: %v", err)
 	}
-	ap.version = i.lastVersion
+	ap.version = i.version
+	ap.hasSnapshot = i.hasSnapshot
 	if i.needToLoadFromVersion {
-		if i.lastVersion == 0 {
+		if i.version == 0 {
 			_, err = ap.eventstore.LoadLatest(ctx, path, ap.numEventsInSnapshot, ap)
 		} else {
 			_, err = ap.eventstore.LoadFromVersion(ctx, path, ap.version+1, ap)
