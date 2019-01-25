@@ -88,13 +88,13 @@ func (p Projection) loadEvents(ctx context.Context, model Model) (int, uint64, e
 	if p.numEventsInSnapshot <= 0 {
 		numEvents, err = p.store.Load(ctx, p.path, &sm)
 		if err != nil {
-			return -1, 0, fmt.Errorf("aggregate cannot load events to model: %v", err)
+			return -1, 0, fmt.Errorf("cannot load events to eventstore model: %v", err)
 		}
 	} else {
 		for i := 1; numEvents == 0 && i < 8; i++ {
 			numEvents, err = p.store.LoadLatest(ctx, p.path, p.numEventsInSnapshot*i, &sm)
 			if err != nil {
-				return -1, 0, fmt.Errorf("aggregate cannot load last events to model: %v", err)
+				return -1, 0, fmt.Errorf("cannot load last events to eventstore model: %v", err)
 			}
 			if sm.isEmpty {
 				return 0, 0, nil
