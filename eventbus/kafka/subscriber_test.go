@@ -26,7 +26,7 @@ func TestSubscriber(t *testing.T) {
 	config.Producer.Flush.MaxMessages = 1
 
 	timeout := time.Second * 30
-	waitForSubscription := time.Second * 5
+	waitForSubscription := time.Second * 7
 
 	publisher, err := NewPublisher(
 		[]string{broker},
