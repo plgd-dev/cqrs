@@ -249,20 +249,20 @@ func (p projectionHandler) HandleEvent(ctx context.Context, path protoEvent.Path
 
 // SubscribeTo set topics for observation for update events.
 func (p *Projection) SubscribeTo(topics []string) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	if p.subscriber == nil {
 		return fmt.Errorf("projection doesn't support subscribe to topics")
 	}
-	p.lock.Lock()
 	if p.observer == nil {
 		observer, err := p.subscriber.Subscribe(p.ctx, p.subscriptionId, topics, projectionHandler{p})
 		if err != nil {
-			p.lock.Unlock()
 			return fmt.Errorf("projection cannot subscribe to topics: %v", err)
 		}
 		p.observer = observer
 	}
 	err := p.observer.SetTopics(p.ctx, topics)
-	p.lock.Unlock()
 	if err != nil {
 		return fmt.Errorf("projection cannot set topics: %v", err)
 	}
