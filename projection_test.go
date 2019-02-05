@@ -155,7 +155,7 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 
-	projection, err := NewProjection(ctx, store, numEventsInSnapshot, subscriber, func(context.Context) (Model, error) { return &mockEventHandler{}, nil })
+	projection, err := NewProjection(ctx, "testProjection", store, numEventsInSnapshot, subscriber, func(context.Context) (Model, error) { return &mockEventHandler{}, nil })
 	assert.NoError(t, err)
 
 	err = projection.Project(path1)

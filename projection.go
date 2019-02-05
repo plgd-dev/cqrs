@@ -11,7 +11,6 @@ import (
 	"github.com/go-ocf/cqrs/eventbus"
 	"github.com/go-ocf/cqrs/eventstore"
 	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
-	"github.com/gofrs/uuid"
 )
 
 // Model define interface of projectionModel.
@@ -50,7 +49,7 @@ type Projection struct {
 }
 
 // NewProjection creates projection.
-func NewProjection(ctx context.Context, eventstore eventstore.EventStore, numEventsInSnapshot int, subscriber eventbus.Subscriber, factoryModel FactoryModelFunc) (*Projection, error) {
+func NewProjection(ctx context.Context, subscriptionId string, eventstore eventstore.EventStore, numEventsInSnapshot int, subscriber eventbus.Subscriber, factoryModel FactoryModelFunc) (*Projection, error) {
 	if eventstore == nil {
 		return nil, errors.New("invalid handle of event store")
 	}
@@ -65,7 +64,7 @@ func NewProjection(ctx context.Context, eventstore eventstore.EventStore, numEve
 		numEventsInSnapshot:  numEventsInSnapshot,
 		factoryModel:         factoryModel,
 		subscriber:           subscriber,
-		subscriptionId:       uuid.Must(uuid.NewV4()).String(),
+		subscriptionId:       subscriptionId,
 	}
 
 	return &rd, nil
