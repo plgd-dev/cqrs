@@ -1,7 +1,6 @@
 package cqrs
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus"
 	"github.com/go-ocf/cqrs/eventstore"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 )
 
 // Model define interface of projectionModel.
@@ -70,21 +68,6 @@ func NewProjection(ctx context.Context, subscriptionId string, eventstore events
 	return &rd, nil
 }
 
-func path2string(path protoEvent.Path) string {
-	var b bytes.Buffer
-	for _, p := range path.Path {
-		if b.Len() > 0 {
-			b.WriteString("/")
-		}
-		b.WriteString(p)
-	}
-	b.WriteString("/")
-	b.WriteString(path.AggregateId)
-	return b.String()
-}
-
-func (ap *aggregateProjectionModel) SnapshotEventType() string { return ap.model.SnapshotEventType() }
-
 type iterator struct {
 	iter                  event.Iter
 	num                   int
@@ -119,23 +102,24 @@ func (i *iterator) Err() error {
 	return i.iter.Err()
 }
 
-func (ap *aggregateProjectionModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
+/*
+func (ap *aggregateProjectionModel) Handle(ctx context.Context, iter event.Iter) error {
 	i := iterator{
 		version:     ap.version,
 		hasSnapshot: ap.hasSnapshot,
 
-		iter:              iter,
-		snapshotEventType: ap.SnapshotEventType(),
+		iter: iter,
 	}
-	err := ap.model.HandleEvent(ctx, path, &i)
+	err := ap.model.Handle(ctx, &i)
 	if err != nil {
 		ap.version = i.version
 		ap.hasSnapshot = i.hasSnapshot
 	}
-	return i.num, err
+	return err
 }
+*/
 
-func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+func (ap *aggregateProjectionModel) Handle(ctx context.Context, iter event.Iter) error {
 	ap.lock.Lock()
 	defer ap.lock.Unlock()
 
@@ -143,10 +127,9 @@ func (ap *aggregateProjectionModel) HandleEvent(ctx context.Context, path protoE
 		version:     ap.version,
 		hasSnapshot: ap.hasSnapshot,
 
-		iter:              iter,
-		snapshotEventType: ap.SnapshotEventType(),
+		iter: iter,
 	}
-	err := ap.model.HandleEvent(ctx, path, &i)
+	err := ap.model.Handle(ctx, &i)
 	if err != nil {
 		return fmt.Errorf("cannot handle event to aggregate projection model: %v", err)
 	}

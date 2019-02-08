@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -41,7 +40,7 @@ func newMockEventHandler() *mockEventHandler {
 	return &mockEventHandler{newEvent: make(chan mockEvent, 10)}
 }
 
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
 
 	for iter.Next(&eu) {
@@ -108,9 +107,14 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	//savedEvents := []Event{}
 	AggregateID1 := "aggregateID1"
 	AggregateID2 := "aggregateID2"
-	aggregateID1Path := protoEvent.Path{
+	type Path struct {
+		AggregateId string
+		GroupId     string
+	}
+
+	aggregateID1Path := Path{
 		AggregateId: AggregateID1,
-		Path:        []string{"deviceId"},
+		GroupId:     "deviceId",
 	}
 	/*
 		aggregateID2Path := protoEvent.Path{
@@ -162,7 +166,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	assert.Equal(t, 2, len(topics))
 
 	t.Log("Without subscription")
-	err := publisher.Publish(ctx, topics[0:1], aggregateID1Path, eventsToPublish[0])
+	err := publisher.Publish(ctx, topics[0:1], aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[0])
 	assert.NoError(t, err)
 	time.Sleep(waitForSubscription)
 
@@ -171,7 +175,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	m0, ob0 := testNewSubscription(t, ctx, subscriber, "sub-0", topics[0:1])
 	time.Sleep(waitForSubscription)
 
-	err = publisher.Publish(ctx, topics[0:1], aggregateID1Path, eventsToPublish[1])
+	err = publisher.Publish(ctx, topics[0:1], aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[1])
 	assert.NoError(t, err)
 
 	event0, err := m0.waitForEvent(timeout)
@@ -204,7 +208,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 
 	time.Sleep(waitForSubscription)
 
-	err = publisher.Publish(ctx, topics, aggregateID1Path, eventsToPublish[2])
+	err = publisher.Publish(ctx, topics, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[2])
 	assert.NoError(t, err)
 
 	event1, err := m1.waitForEvent(timeout)
@@ -225,7 +229,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	time.Sleep(waitForSubscription)
 	assert.NoError(t, err)
 
-	err = publisher.Publish(ctx, []string{topic}, aggregateID1Path, eventsToPublish[3])
+	err = publisher.Publish(ctx, []string{topic}, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[3])
 	assert.NoError(t, err)
 
 	event4, err := m4.waitForEvent(timeout)

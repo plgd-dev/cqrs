@@ -4,30 +4,30 @@ import (
 	"context"
 
 	event "github.com/go-ocf/cqrs/event"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 )
 
-// Handler handles events from eventstore. Set applied to true when snapshot was loaded and all events after.
-type Handler interface {
-	HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error)
+// Query used to load events - all members are optional.
+type Query struct {
+	GroupId     string
+	AggregateId string
+	Version     uint64
 }
 
-//PathIter iterator over paths
-type PathIter interface {
-	Next(path *protoEvent.Path) bool
+type QueryIter interface {
+	Next(query *Query) bool
 	Err() error
 }
 
-// PathsHandler provide iterator to list of paths
-type PathsHandler interface {
-	HandlePaths(ctx context.Context, iter PathIter) error
+// QueryHandler provides handler for process query eventstore.
+type QueryHandler interface {
+	QueryHandle(ctx context.Context, iter QueryIter) (err error)
 }
 
 // EventStore provides interface over eventstore.
 type EventStore interface {
-	Save(ctx context.Context, path protoEvent.Path, events []event.Event) (concurrencyException bool, err error)
-	Load(ctx context.Context, path protoEvent.Path, eh Handler) (int, error)
-	LoadLatest(ctx context.Context, path protoEvent.Path, count int, eh Handler) (int, error)
-	LoadFromVersion(ctx context.Context, path protoEvent.Path, version uint64, eh Handler) (int, error)
-	ListPaths(ctx context.Context, path protoEvent.Path, pathsHandler PathsHandler) error
+	Save(ctx context.Context, groupId string, aggregateId string, events []event.Event) (concurrencyException bool, err error)
+	Load(ctx context.Context, queries []Query, eventHandler event.Handler) error
+
+	SaveSnapshotQuery(ctx context.Context, groupId string, aggregateId string, version uint64) error
+	LoadSnapshotQueries(ctx context.Context, queries []Query, qh QueryHandler) error
 }

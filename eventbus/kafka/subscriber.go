@@ -30,7 +30,7 @@ type Observer struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	dataUnmarshaler event.UnmarshalerFunc
-	eventHandler    event.EventHandler
+	eventHandler    event.Handler
 	wg              sync.WaitGroup
 	errFunc         ErrFunc
 	lock            sync.Mutex
@@ -63,7 +63,7 @@ func NewSubscriber(brokers []string, config *sarama.Config, eventUnmarshaler eve
 }
 
 // Subscribe creates a observer that listen on events from topics.
-func (b *Subscriber) Subscribe(ctx context.Context, subscriptionID string, topics []string, eh event.EventHandler) (eventbus.Observer, error) {
+func (b *Subscriber) Subscribe(ctx context.Context, subscriptionID string, topics []string, eh event.Handler) (eventbus.Observer, error) {
 	observer, err := b.newObservation(ctx, subscriptionID, eh)
 	if err != nil {
 		return nil, fmt.Errorf("cannot observe: %v", err)
@@ -76,7 +76,7 @@ func (b *Subscriber) Subscribe(ctx context.Context, subscriptionID string, topic
 	return observer, nil
 }
 
-func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, eh event.EventHandler) (*Observer, error) {
+func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, eh event.Handler) (*Observer, error) {
 	config := cluster.NewConfig()
 	config.Config = *b.config
 	config.Consumer.Return.Errors = true
@@ -173,15 +173,16 @@ type iter struct {
 }
 
 func (i *iter) Next(e *event.EventUnmarshaler) bool {
-	if i.hasNext {
-		e.Version = i.e.Version
-		e.AggregateId = i.e.Path.AggregateId
-		e.EventType = i.e.EventType
-		e.Unmarshal = i.dataUnmarshaler
-		i.hasNext = false
-		return true
+	if !i.hasNext {
+		return false
 	}
-	return false
+	e.Version = i.e.Version
+	e.AggregateId = i.e.AggregateId
+	e.GroupId = i.e.GroupId
+	e.EventType = i.e.EventType
+	e.Unmarshal = i.dataUnmarshaler
+	i.hasNext = false
+	return true
 }
 
 func (i *iter) Err() error {
@@ -205,7 +206,7 @@ func (o *Observer) handleMessage(msg *sarama.ConsumerMessage) error {
 		},
 	}
 
-	if err := o.eventHandler.HandleEvent(o.ctx, *e.Path, &i); err != nil {
+	if err := o.eventHandler.Handle(o.ctx, &i); err != nil {
 		return fmt.Errorf("could not handle event: %v", err)
 	}
 	o.consumer.MarkOffset(msg, "")

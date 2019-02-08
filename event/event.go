@@ -2,15 +2,12 @@ package event
 
 import (
 	"context"
-
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 )
 
 //Event interface over event created by user.
 type Event interface {
 	Version() uint64
 	EventType() string
-	AggregateId() string
 }
 
 //EventUnmarshaler provides event.
@@ -18,6 +15,7 @@ type EventUnmarshaler struct {
 	Version     uint64
 	EventType   string
 	AggregateId string
+	GroupId     string
 	Unmarshal   func(v interface{}) error
 }
 
@@ -27,9 +25,9 @@ type Iter interface {
 	Err() error
 }
 
-// EventHandler provides handler for eventstore or eventbus.
-type EventHandler interface {
-	HandleEvent(ctx context.Context, path protoEvent.Path, iter Iter) (err error)
+// Handler provides handler for eventstore or eventbus.
+type Handler interface {
+	Handle(ctx context.Context, iter Iter) (err error)
 }
 
 //MarshalerFunc marshal struct to bytes.

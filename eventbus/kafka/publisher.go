@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/go-ocf/cqrs/event"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	protoEventBus "github.com/go-ocf/cqrs/protobuf/eventbus"
 
 	sarama "github.com/Shopify/sarama"
@@ -42,17 +41,18 @@ func NewPublisher(brokers []string, config *sarama.Config, eventMarshaler event.
 }
 
 // Publish publishes an event to topics.
-func (b *Publisher) Publish(ctx context.Context, topics []string, path protoEvent.Path, event event.Event) error {
+func (b *Publisher) Publish(ctx context.Context, topics []string, groupId, aggregateId string, event event.Event) error {
 	data, err := b.dataMarshalerFunc(event)
 	if err != nil {
 		return errors.New("could not marshal data for event: " + err.Error())
 	}
 
 	e := protoEventBus.Event{
-		EventType: event.EventType(),
-		Data:      data,
-		Version:   event.Version(),
-		Path:      &path,
+		EventType:   event.EventType(),
+		Data:        data,
+		Version:     event.Version(),
+		GroupId:     groupId,
+		AggregateId: aggregateId,
 	}
 
 	eData, err := e.Marshal()

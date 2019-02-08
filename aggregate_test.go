@@ -14,7 +14,6 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/go-ocf/kit/http"
 	"github.com/go-ocf/resource-aggregate/protobuf/events"
 	"github.com/stretchr/testify/assert"
@@ -108,7 +107,7 @@ func (rs *ResourceStateSnapshotTaken) HandleEventResourceUnpublished(ctx context
 	return nil
 }
 
-func (rs *ResourceStateSnapshotTaken) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+func (rs *ResourceStateSnapshotTaken) HandleEvent(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
 	for iter.Next(&eu) {
 		if eu.EventType == "" {
@@ -213,15 +212,7 @@ type mockEventHandler struct {
 	events []event.EventUnmarshaler
 }
 
-func (eh *mockEventHandler) BeforeLoadingEventsFromEventstore(ctx context.Context, path protoEvent.Path) {
-
-}
-
-func (eh *mockEventHandler) AfterLoadingEventsFromEventstore(ctx context.Context, path protoEvent.Path) {
-
-}
-
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+func (eh *mockEventHandler) HandleEvent(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
 	for iter.Next(&eu) {
 		if eu.EventType == "" {
@@ -277,8 +268,13 @@ func TestAggregate(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	path := protoEvent.Path{
-		Path:        []string{"1", "2", "3", "4"},
+	type Path struct {
+		GroupId     string
+		AggregateId string
+	}
+
+	path := Path{
+		GroupId:     "1",
 		AggregateId: "ID2",
 	}
 

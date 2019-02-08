@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/go-ocf/resource-aggregate/protobuf/events"
 	"github.com/stretchr/testify/assert"
 )

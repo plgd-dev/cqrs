@@ -5,13 +5,11 @@ import (
 	"fmt"
 
 	"github.com/go-ocf/cqrs/event"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 )
 
 // Model user defined model where events from eventstore will be projected.
 type Model interface {
-	event.EventHandler
-	SnapshotEventType() string
+	event.Handler
 }
 
 // FactoryModelFunc creates user model.
@@ -19,100 +17,69 @@ type FactoryModelFunc func(ctx context.Context) (Model, error)
 
 // Projection projects events from eventstore to user model.
 type Projection struct {
-	path                protoEvent.Path
-	numEventsInSnapshot int
+	queries []Query
 
-	store EventStore
+	store          EventStore
+	loaderTreshold int
 
 	factoryModel FactoryModelFunc
 }
 
 // MakeProjection creates projection over eventstore.
-func MakeProjection(path protoEvent.Path, numEventsInSnapshot int, store EventStore, factoryModel FactoryModelFunc) Projection {
+func MakeProjection(queries []Query, loaderTreshold int, store EventStore, factoryModel FactoryModelFunc) Projection {
 	return Projection{
-		path:                path,
-		numEventsInSnapshot: numEventsInSnapshot,
-		store:               store,
-		factoryModel:        factoryModel,
+		queries:        queries,
+		store:          store,
+		factoryModel:   factoryModel,
+		loaderTreshold: loaderTreshold,
 	}
 }
 
-type snapshotModel struct {
-	model         Model
-	snapshotOccur bool
-	isEmpty       bool
-	lastVersion   uint64
+type loader struct {
+	store     EventStore
+	model     Model
+	queries   []Query
+	threshold int
 }
 
-type iterator struct {
-	iter        event.Iter
-	num         int
-	lastVersion uint64
-	model       Model
-	isEmpty     bool
-}
-
-func (i *iterator) Next(e *event.EventUnmarshaler) bool {
-	for i.iter.Next(e) {
-		i.isEmpty = false
-		if e.EventType == i.model.SnapshotEventType() || e.Version == 0 || i.num > 0 {
-			i.num++
-			i.lastVersion = e.Version
-			return true
-		}
+func (l *loader) loadEvents(ctx context.Context) error {
+	err := l.store.Load(ctx, l.queries, l.model)
+	if err != nil {
+		return fmt.Errorf("cannot load events to eventstore model: %v", err)
 	}
-	return false
+	l.queries = l.queries[:0]
+	return nil
 }
 
-func (i *iterator) Err() error {
-	return i.iter.Err()
-}
-
-func (m *snapshotModel) HandleEventFromStore(ctx context.Context, path protoEvent.Path, iter event.Iter) (int, error) {
-
-	i := iterator{
-		model:   m.model,
-		iter:    iter,
-		isEmpty: true,
-	}
-	err := m.model.HandleEvent(ctx, path, &i)
-	m.lastVersion = i.lastVersion
-	m.isEmpty = i.isEmpty
-	return i.num, err
-}
-
-func (p Projection) loadEvents(ctx context.Context, model Model) (int, uint64, error) {
-	var numEvents int
-	var err error
-	sm := snapshotModel{model: model, isEmpty: true}
-	if p.numEventsInSnapshot <= 0 {
-		numEvents, err = p.store.Load(ctx, p.path, &sm)
-		if err != nil {
-			return -1, 0, fmt.Errorf("cannot load events to eventstore model: %v", err)
-		}
-	} else {
-		for i := 1; numEvents == 0 && i < 8; i++ {
-			numEvents, err = p.store.LoadLatest(ctx, p.path, p.numEventsInSnapshot*i, &sm)
+func (l *loader) QueryHandle(ctx context.Context, iter QueryIter) error {
+	var query Query
+	for iter.Next(&query) {
+		l.queries = append(l.queries, query)
+		if len(l.queries) == l.threshold {
+			err := l.loadEvents(ctx)
 			if err != nil {
-				return -1, 0, fmt.Errorf("cannot load last events to eventstore model: %v", err)
+				return err
 			}
-			if sm.isEmpty {
-				return 0, 0, nil
-			}
-		}
-		if numEvents == 0 {
-			numEvents, err = p.store.Load(ctx, p.path, &sm)
 		}
 	}
-	return numEvents, sm.lastVersion, err
+	if iter.Err() != nil {
+		return iter.Err()
+	}
+	if len(l.queries) > 0 {
+		return l.loadEvents(ctx)
+	}
+	return nil
 }
 
 // Project returns updated user models by events.
-func (p Projection) Project(ctx context.Context) (model Model, numEvents int, lastVersion uint64, err error) {
+func (p Projection) Project(ctx context.Context) (model Model, err error) {
 	model, err = p.factoryModel(ctx)
 	if err != nil {
-		return nil, -1, 0, fmt.Errorf("cannot project evenstore to model %v", err)
+		return nil, fmt.Errorf("cannot project evenstore to model %v", err)
 	}
-	numEvents, lastVersion, err = p.loadEvents(ctx, model)
-	return
+	return model, p.store.LoadSnapshotQueries(ctx, p.queries, &loader{
+		store:     p.store,
+		model:     model,
+		threshold: p.loaderTreshold,
+	})
 }
