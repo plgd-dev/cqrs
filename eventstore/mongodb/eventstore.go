@@ -185,7 +185,7 @@ type iterator struct {
 	dataUnmarshaler event.UnmarshalerFunc
 }
 
-func (i *iterator) Next(e *event.EventUnmarshaler) bool {
+func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	var event dbEvent
 
 	if !i.iter.Next(&event) {
@@ -382,7 +382,7 @@ type queryIterator struct {
 	iter *mgo.Iter
 }
 
-func (i *queryIterator) Next(q *eventstore.Query) bool {
+func (i *queryIterator) Next(ctx context.Context, q *eventstore.Query) bool {
 	var query dbSnapshot
 
 	if !i.iter.Next(&query) {

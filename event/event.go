@@ -21,7 +21,7 @@ type EventUnmarshaler struct {
 
 //Iter provides iterator over events from eventstore or eventbus.
 type Iter interface {
-	Next(eventUnmarshaler *EventUnmarshaler) bool
+	Next(ctx context.Context, eventUnmarshaler *EventUnmarshaler) bool
 	Err() error
 }
 

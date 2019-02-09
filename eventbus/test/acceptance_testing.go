@@ -43,7 +43,7 @@ func newMockEventHandler() *mockEventHandler {
 func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
 
-	for iter.Next(&eu) {
+	for iter.Next(ctx, &eu) {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}

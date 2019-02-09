@@ -32,7 +32,7 @@ type mockEventHandler struct {
 func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
 
-	for iter.Next(&eu) {
+	for iter.Next(ctx, &eu) {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}
@@ -249,33 +249,36 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	}, eh6.events)
 
 	t.Log("test projection all")
-	p := eventstore.MakeProjection([]eventstore.Query{}, 10, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	model := mockEventHandler{}
+	p := eventstore.NewProjection(10, store, func(context.Context) (eventstore.Model, error) { return &model, nil })
 
-	model, err := p.Project(ctx)
+	err = p.Project(ctx, []eventstore.Query{})
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
 		eventsToSave[0],
-	}, model.(*mockEventHandler).events)
+	}, model.events)
 
 	t.Log("test projection group")
-	p = eventstore.MakeProjection([]eventstore.Query{eventstore.Query{GroupId: aggregateID1Path.GroupId}}, 10, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	model1 := mockEventHandler{}
+	p = eventstore.NewProjection(10, store, func(context.Context) (eventstore.Model, error) { return &model1, nil })
 
-	model, err = p.Project(ctx)
+	err = p.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: aggregateID1Path.GroupId}})
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
-	}, model.(*mockEventHandler).events)
+	}, model1.events)
 
 	t.Log("test projection aggregate")
-	p = eventstore.MakeProjection([]eventstore.Query{
+	model2 := mockEventHandler{}
+	p = eventstore.NewProjection(10, store, func(context.Context) (eventstore.Model, error) { return &model2, nil })
+
+	err = p.Project(ctx, []eventstore.Query{
 		eventstore.Query{
 			GroupId:     aggregateID2Path.GroupId,
 			AggregateId: aggregateID2Path.AggregateId,
 		},
-	}, 10, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
-
-	model, err = p.Project(ctx)
+	})
 	assert.NoError(t, err)
-	assert.Equal(t, []event.Event(nil), model.(*mockEventHandler).events)
+	assert.Equal(t, mockEventHandler{events: []event.Event(nil)}, model2)
 }

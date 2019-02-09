@@ -14,7 +14,7 @@ type Query struct {
 }
 
 type QueryIter interface {
-	Next(query *Query) bool
+	Next(ctx context.Context, query *Query) bool
 	Err() error
 }
 

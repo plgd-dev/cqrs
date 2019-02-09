@@ -172,7 +172,7 @@ type iter struct {
 	hasNext         bool
 }
 
-func (i *iter) Next(e *event.EventUnmarshaler) bool {
+func (i *iter) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	if !i.hasNext {
 		return false
 	}
