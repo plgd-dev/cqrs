@@ -210,7 +210,7 @@ func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
 		}
 		i := iterator{
 			iter:               iter,
-			firstEvent:         &e,
+			firstEvent:         ie,
 			model:              am,
 			nextEventToProcess: nil,
 			err:                nil,
