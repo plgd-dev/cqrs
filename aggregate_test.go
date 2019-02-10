@@ -107,9 +107,9 @@ func (rs *ResourceStateSnapshotTaken) HandleEventResourceUnpublished(ctx context
 	return nil
 }
 
-func (rs *ResourceStateSnapshotTaken) HandleEvent(ctx context.Context, iter event.Iter) error {
+func (rs *ResourceStateSnapshotTaken) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
-	for iter.Next(&eu) {
+	for iter.Next(ctx, &eu) {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}
@@ -212,9 +212,9 @@ type mockEventHandler struct {
 	events []event.EventUnmarshaler
 }
 
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, iter event.Iter) error {
+func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
-	for iter.Next(&eu) {
+	for iter.Next(ctx, &eu) {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}
@@ -291,7 +291,7 @@ func TestAggregate(t *testing.T) {
 		AuthorizationContext: &commands.AuthorizationContext{},
 	}
 
-	a, err := NewAggregate(path, store, 1, func(context.Context) (AggregateModel, error) {
+	a, err := NewAggregate(path.GroupId, path.AggregateId, 1, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
@@ -320,12 +320,10 @@ func TestAggregate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	p := eventstore.MakeProjection(path, 1, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	p := eventstore.NewProjection(1, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
 
-	_, numEvents, lastVersion, err := p.Project(ctx)
+	err = p.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: path.GroupId, AggregateId: path.AggregateId}})
 	assert.NoError(t, err)
-	assert.Equal(t, 1, numEvents)
-	assert.Equal(t, uint64(6), lastVersion)
 
 	//assert.Equal(t, nil, model.(*mockEventHandler).events)
 

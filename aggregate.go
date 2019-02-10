@@ -83,8 +83,8 @@ type aggrIterator struct {
 	numEvents   int
 }
 
-func (i *aggrIterator) Next(event *event.EventUnmarshaler) bool {
-	if !i.iter.Next(event) {
+func (i *aggrIterator) Next(ctx context.Context, event *event.EventUnmarshaler) bool {
+	if !i.iter.Next(ctx, event) {
 		return false
 	}
 	i.lastVersion = event.Version
@@ -100,6 +100,10 @@ type aggrModel struct {
 	model       eventstore.Model
 	lastVersion uint64
 	numEvents   int
+}
+
+func (ah *aggrModel) SnapshotEventType() string {
+	return ah.model.SnapshotEventType()
 }
 
 func (ah *aggrModel) Handle(ctx context.Context, iter event.Iter) error {
@@ -120,10 +124,8 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Eve
 			return nil, fmt.Errorf("aggregate cannot create model: %v", err)
 		}
 		amodel := &aggrModel{model: model}
-		ep := eventstore.MakeProjection([]eventstore.Query{
-			eventstore.Query{AggregateId: a.aggregateId, GroupId: a.groupId},
-		}, 1, a.store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil })
-		_, err = ep.Project(ctx)
+		ep := eventstore.NewProjection(1, a.store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil })
+		err = ep.Project(ctx, []eventstore.Query{eventstore.Query{AggregateId: a.aggregateId, GroupId: a.groupId}})
 
 		if err != nil {
 			return nil, fmt.Errorf("aggregate cannot load model: %v", err)

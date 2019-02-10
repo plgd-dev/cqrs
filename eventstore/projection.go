@@ -65,8 +65,8 @@ type Projection struct {
 }
 
 // NewProjection projection over eventstore.
-func NewProjection(loaderTreshold int, store EventStore, factoryModel FactoryModelFunc) Projection {
-	return Projection{
+func NewProjection(loaderTreshold int, store EventStore, factoryModel FactoryModelFunc) *Projection {
+	return &Projection{
 		store:           store,
 		factoryModel:    factoryModel,
 		loaderTreshold:  loaderTreshold,
@@ -256,7 +256,7 @@ func (p *Projection) Project(ctx context.Context, queries []Query) (err error) {
 }
 
 // Forget drop projection by query.Verson in Query is ignored.
-func (p *Projection) Forget(ctx context.Context, queries []Query) (err error) {
+func (p *Projection) Forget(queries []Query) (err error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for _, query := range queries {
@@ -273,4 +273,57 @@ func (p *Projection) Forget(ctx context.Context, queries []Query) (err error) {
 	}
 
 	return nil
+}
+
+func makeModelId(groupId, aggregateId string) string {
+	return groupId + "." + aggregateId
+}
+
+func (p *Projection) allModels(models map[string]Model) map[string]Model {
+	for groupId, group := range p.aggregateModels {
+		for aggrId, apm := range group {
+			models[makeModelId(groupId, aggrId)] = apm.model
+		}
+	}
+	return models
+}
+
+func (p *Projection) models(queries []Query) map[string]Model {
+	models := make(map[string]Model)
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if len(queries) == 0 {
+		return p.allModels(models)
+	}
+	for _, query := range queries {
+		switch {
+		case query.GroupId == "" && query.AggregateId == "":
+			return p.allModels(models)
+		case query.GroupId != "" && query.AggregateId == "":
+			if aggregates, ok := p.aggregateModels[query.GroupId]; ok {
+				for aggrId, apm := range aggregates {
+					models[makeModelId(query.GroupId, aggrId)] = apm.model
+				}
+			}
+		default:
+			if aggregates, ok := p.aggregateModels[query.GroupId]; ok {
+				if apm, ok := aggregates[query.AggregateId]; ok {
+					models[makeModelId(query.GroupId, query.AggregateId)] = apm.model
+				}
+			}
+		}
+	}
+
+	return models
+}
+
+// Models return models from projection.
+func (p *Projection) Models(queries []Query) []Model {
+	models := p.models(queries)
+	result := make([]Model, 0, len(models))
+	for _, m := range models {
+		result = append(result, m)
+	}
+	return result
 }

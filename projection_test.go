@@ -14,6 +14,7 @@ import (
 	"github.com/gofrs/uuid"
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
+	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	"github.com/go-ocf/resource-aggregate/protobuf/events"
 	"github.com/stretchr/testify/assert"
@@ -81,18 +82,23 @@ func TestProjection(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	path1 := protoEvent.Path{
-		Path:        []string{"1", "2", "3", "4"},
+	type Path struct {
+		GroupId     string
+		AggregateId string
+	}
+
+	path1 := Path{
+		GroupId:     "1",
 		AggregateId: "ID1",
 	}
 
-	path2 := protoEvent.Path{
-		Path:        []string{"1", "2", "3", "4"},
+	path2 := Path{
+		GroupId:     "1",
 		AggregateId: "ID2",
 	}
 
-	path3 := protoEvent.Path{
-		Path:        []string{"1", "2", "3", "4"},
+	path3 := Path{
+		GroupId:     "1",
 		AggregateId: "ID3",
 	}
 
@@ -131,12 +137,12 @@ func TestProjection(t *testing.T) {
 	}
 
 	/*
-		path2topics := func(path protoEvent.Path, event event.Event) []string {
+		path2topics := func(path Path, event event.Event) []string {
 			return topics
 		}
 	*/
 
-	a1, err := NewAggregate(path1, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
+	a1, err := NewAggregate(path1.GroupId, path1.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
@@ -145,7 +151,7 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 
-	a2, err := NewAggregate(path2, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
+	a2, err := NewAggregate(path2.GroupId, path2.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
@@ -154,23 +160,23 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 
-	projection, err := NewProjection(ctx, "testProjection", store, numEventsInSnapshot, subscriber, func(context.Context) (Model, error) { return &mockEventHandler{}, nil })
+	projection, err := NewProjection(ctx, 1, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
 	assert.NoError(t, err)
 
-	err = projection.Project(path1)
+	err = projection.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: path1.GroupId, AggregateId: path1.AggregateId}})
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(projection.aggregateProjections))
+	assert.Equal(t, 1, len(projection.Models(nil)))
 
-	err = projection.Project(path2)
+	err = projection.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: path2.GroupId, AggregateId: path2.AggregateId}})
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(projection.aggregateProjections))
+	assert.Equal(t, 2, len(projection.Models(nil)))
 
 	err = projection.SubscribeTo(topics)
 	assert.NoError(t, err)
 
 	time.Sleep(waitForSubscription)
 
-	a3, err := NewAggregate(path3, store, numEventsInSnapshot, func(context.Context) (AggregateModel, error) {
+	a3, err := NewAggregate(path3.GroupId, path3.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
@@ -179,19 +185,17 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 	for _, e := range evs {
-		err = publisher.Publish(ctx, topics, path3, e)
+		err = publisher.Publish(ctx, topics, path3.GroupId, path3.AggregateId, e)
 		assert.NoError(t, err)
 	}
 
-	projection.lock.Lock()
-	assert.Equal(t, 3, len(projection.aggregateProjections))
-	projection.lock.Unlock()
+	assert.Equal(t, 3, len(projection.Models(nil)))
 
 	evs, err = a1.HandleCommand(ctx, commandUnpub1)
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 	for _, e := range evs {
-		err = publisher.Publish(ctx, topics, path3, e)
+		err = publisher.Publish(ctx, topics, path3.GroupId, path3.AggregateId, e)
 		assert.NoError(t, err)
 	}
 
@@ -200,20 +204,20 @@ func TestProjection(t *testing.T) {
 
 	time.Sleep(waitForSubscription)
 
-	err = projection.Forget(path3)
+	err = projection.Forget([]eventstore.Query{eventstore.Query{GroupId: path3.GroupId, AggregateId: path3.AggregateId}})
 	assert.NoError(t, err)
 
 	evs, err = a3.HandleCommand(ctx, commandUnpub3)
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 	for _, e := range evs {
-		err = publisher.Publish(ctx, topics[1:], path3, e)
+		err = publisher.Publish(ctx, topics[1:], path3.GroupId, path3.AggregateId, e)
 		assert.NoError(t, err)
 	}
 
 	time.Sleep(time.Second)
 	projection.lock.Lock()
-	assert.Equal(t, 2, len(projection.aggregateProjections))
+	assert.Equal(t, 2, len(projection.Models(nil)))
 	projection.lock.Unlock()
 
 	err = projection.SubscribeTo(nil)
@@ -225,11 +229,11 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 	for _, e := range evs {
-		err = publisher.Publish(ctx, topics, path1, e)
+		err = publisher.Publish(ctx, topics, path1.GroupId, path1.AggregateId, e)
 		assert.NoError(t, err)
 	}
 
 	projection.lock.Lock()
-	assert.Equal(t, 2, len(projection.aggregateProjections))
+	assert.Equal(t, 2, len(projection.Models(nil)))
 	projection.lock.Unlock()
 }
