@@ -195,18 +195,17 @@ func (p *Projection) getModel(ctx context.Context, groupId, aggregateId string) 
 	return apm, nil
 }
 
-// Handle update projection by events.
-func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
+func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries []Query, err error) {
 	var e event.EventUnmarshaler
 	if !iter.Next(ctx, &e) {
-		return iter.Err()
+		return nil, iter.Err()
 	}
 	ie := &e
-	reloadQueries := make([]Query, 0, 32)
+	reloadQueries = make([]Query, 0, 32)
 	for ie != nil {
 		am, err := p.getModel(ctx, ie.GroupId, ie.AggregateId)
 		if err != nil {
-			return fmt.Errorf("cannot handle projection: %v", err)
+			return nil, fmt.Errorf("cannot handle projection: %v", err)
 		}
 		i := iterator{
 			iter:               iter,
@@ -218,7 +217,7 @@ func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
 		}
 		err = am.Handle(ctx, &i)
 		if err != nil {
-			return fmt.Errorf("cannot handle projection: %v", err)
+			return nil, fmt.Errorf("cannot handle projection: %v", err)
 		}
 		//check if we are on the end
 		if i.nextEventToProcess == nil {
@@ -235,14 +234,29 @@ func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
 		}
 	}
 
+	return nil, nil
+}
+
+// Handle update projection by events.
+func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
+	_, err := p.handle(ctx, iter)
+	return err
+}
+
+// Handle update projection by events.
+func (p *Projection) HandleWithReload(ctx context.Context, iter event.Iter) error {
 	//reload queries for db because version of events was greater > lastVersionSeen+1
+	reloadQueries, err := p.handle(ctx, iter)
+	if err != nil {
+		return fmt.Errorf("cannot handle events with reload: %v", err)
+	}
+
 	if len(reloadQueries) > 0 {
 		err := p.store.Load(ctx, reloadQueries, p)
 		if err != nil {
 			return fmt.Errorf("cannot reload events for db: %v", err)
 		}
 	}
-
 	return nil
 }
 

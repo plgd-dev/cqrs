@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus"
 	"github.com/go-ocf/cqrs/eventstore"
 )
@@ -54,6 +55,11 @@ func (p *Projection) Forget(query []eventstore.Query) error {
 	return p.projection.Forget(query)
 }
 
+// Handle events to projection. This events comes from eventbus and it can trigger reload on eventstore.
+func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
+	return p.projection.HandleWithReload(ctx, iter)
+}
+
 // SubscribeTo set topics for observation for update events.
 func (p *Projection) SubscribeTo(topics []string) error {
 	p.lock.Lock()
@@ -63,7 +69,7 @@ func (p *Projection) SubscribeTo(topics []string) error {
 		if p.subscriber == nil {
 			return fmt.Errorf("projection doesn't support subscribe to topics")
 		}
-		observer, err := p.subscriber.Subscribe(p.ctx, p.subscriptionId, topics, p.projection)
+		observer, err := p.subscriber.Subscribe(p.ctx, p.subscriptionId, topics, p)
 		if err != nil {
 			return fmt.Errorf("projection cannot subscribe to topics: %v", err)
 		}
