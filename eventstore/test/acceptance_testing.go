@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/globalsign/mgo/bson"
 	event "github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/stretchr/testify/assert"
@@ -59,10 +58,9 @@ func (eh *mockEventHandler) SnapshotEventType() string { return "snapshot" }
 //   }
 //
 func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventStore) {
-	savedEvents := []event.Event{}
 	AggregateID1 := "aggregateID1"
 	AggregateID2 := "aggregateID2"
-	AggregateID3 := "aggregateID1"
+	AggregateID3 := "aggregateID3"
 	type Path struct {
 		GroupId     string
 		AggregateId string
@@ -81,7 +79,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 		GroupId:     "deviceId1",
 	}
 
-	eventsToSave := []mockEvent{
+	eventsToSave := []event.Event{
 		mockEvent{
 			EventTypeI: "test0",
 		},
@@ -119,14 +117,8 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 		},
 	}
 
-	out, err := bson.Marshal(&eventsToSave[0])
-	assert.NoError(t, err)
-	assert.NotEmpty(t, out)
-
-	ctx = context.WithValue(ctx, "testkey", "testval")
-
 	t.Log("save no events")
-	conExcep, err := store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, savedEvents)
+	conExcep, err := store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, nil)
 	assert.Error(t, err)
 	assert.False(t, conExcep)
 
@@ -136,7 +128,6 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	})
 	assert.NoError(t, err)
 	assert.False(t, conExcep)
-	savedEvents = append(savedEvents, eventsToSave[0])
 
 	t.Log("save event, VersionI 1")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
@@ -144,7 +135,6 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	})
 	assert.NoError(t, err)
 	assert.False(t, conExcep)
-	savedEvents = append(savedEvents, eventsToSave[1])
 
 	t.Log("try to save same event VersionI 1 twice")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
@@ -159,7 +149,6 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	})
 	assert.NoError(t, err)
 	assert.False(t, conExcep)
-	savedEvents = append(savedEvents, eventsToSave[2])
 
 	t.Log("save multiple events, VersionI 3, 4 and 5")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
@@ -167,73 +156,73 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	})
 	assert.NoError(t, err)
 	assert.False(t, conExcep)
-	savedEvents = append(savedEvents, eventsToSave[3], eventsToSave[4], eventsToSave[5])
 
 	t.Log("save event for another aggregate")
+	conExcep, err = store.Save(ctx, aggregateID2Path.GroupId, aggregateID2Path.AggregateId, []event.Event{
+		eventsToSave[0]})
+	assert.NoError(t, err)
+	assert.False(t, conExcep)
+
 	conExcep, err = store.Save(ctx, aggregateID2Path.GroupId, aggregateID2Path.AggregateId, []event.Event{
 		eventsToSave[6], eventsToSave[7], eventsToSave[8]})
 	assert.NoError(t, err)
 	assert.False(t, conExcep)
-	savedEvents = append(savedEvents, eventsToSave[6], eventsToSave[7], eventsToSave[8])
 
 	t.Log("load events for non-existing aggregate")
 	var eh1 mockEventHandler
-	err = store.Load(ctx, []eventstore.Query{{GroupId: "notExist"}}, &eh1)
+	err = store.LoadFromSnapshot(ctx, []eventstore.QueryFromSnapshot{{GroupId: "notExist"}}, &eh1)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(eh1.events))
 
 	t.Log("load events")
 	var eh2 mockEventHandler
-	err = store.Load(ctx, []eventstore.Query{
+	err = store.LoadFromSnapshot(ctx, []eventstore.QueryFromSnapshot{
 		{
 			GroupId:     aggregateID1Path.GroupId,
 			AggregateId: aggregateID1Path.AggregateId,
 		},
 	}, &eh2)
 	assert.NoError(t, err)
-	assert.Equal(t, savedEvents[:6], eh2.events)
+	assert.Equal(t, eventsToSave[:6], eh2.events)
 
 	t.Log("load events from version")
 	var eh3 mockEventHandler
-	err = store.Load(ctx, []eventstore.Query{
+	err = store.LoadFromVersion(ctx, []eventstore.QueryFromVersion{
 		{
-			GroupId:     aggregateID1Path.GroupId,
 			AggregateId: aggregateID1Path.AggregateId,
-			FromVersion: savedEvents[2].Version(),
+			Version:     eventsToSave[2].Version(),
 		},
 	}, &eh3)
 	assert.NoError(t, err)
-	assert.Equal(t, savedEvents[2:6], eh3.events)
+	assert.Equal(t, eventsToSave[2:6], eh3.events)
 
 	t.Log("load multiple aggregatess by all queries")
 	var eh4 mockEventHandler
-	err = store.Load(ctx, []eventstore.Query{
+	err = store.LoadFromVersion(ctx, []eventstore.QueryFromVersion{
 		{
-			GroupId:     aggregateID1Path.GroupId,
 			AggregateId: aggregateID1Path.AggregateId,
 		},
 		{
-			GroupId:     aggregateID2Path.GroupId,
 			AggregateId: aggregateID2Path.AggregateId,
 		},
 	}, &eh4)
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
-		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4],
-		eventsToSave[6], eventsToSave[5], eventsToSave[7], eventsToSave[8],
+		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
+		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, eh4.events)
 
 	t.Log("load multiple aggregates by groupId")
 	var eh5 mockEventHandler
-	err = store.Load(ctx, []eventstore.Query{
+	err = store.LoadFromSnapshot(ctx, []eventstore.QueryFromSnapshot{
 		{
 			GroupId: aggregateID1Path.GroupId,
 		},
 	}, &eh5)
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
-		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4],
-		eventsToSave[6], eventsToSave[5], eventsToSave[7], eventsToSave[8],
+		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
+		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, eh5.events)
 
 	t.Log("load multiple aggregates by all")
@@ -241,45 +230,49 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	conExcep, err = store.Save(ctx, aggregateID3Path.GroupId, aggregateID3Path.AggregateId, []event.Event{eventsToSave[0]})
 	assert.NoError(t, err)
 	assert.False(t, conExcep)
-	err = store.Load(ctx, []eventstore.Query{}, &eh6)
+	err = store.LoadFromSnapshot(ctx, []eventstore.QueryFromSnapshot{}, &eh6)
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
-		eventsToSave[0], eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4],
-		eventsToSave[6], eventsToSave[5], eventsToSave[7], eventsToSave[8],
+		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
+		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
+		eventsToSave[0],
 	}, eh6.events)
 
 	t.Log("test projection all")
 	model := mockEventHandler{}
-	p := eventstore.NewProjection(10, store, func(context.Context) (eventstore.Model, error) { return &model, nil })
+	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return &model, nil })
 
-	err = p.Project(ctx, []eventstore.Query{})
+	err = p.Project(ctx, []eventstore.QueryFromSnapshot{})
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
+		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 		eventsToSave[0],
 	}, model.events)
 
 	t.Log("test projection group")
 	model1 := mockEventHandler{}
-	p = eventstore.NewProjection(10, store, func(context.Context) (eventstore.Model, error) { return &model1, nil })
+	p = eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return &model1, nil })
 
-	err = p.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: aggregateID1Path.GroupId}})
+	err = p.Project(ctx, []eventstore.QueryFromSnapshot{eventstore.QueryFromSnapshot{GroupId: aggregateID1Path.GroupId}})
 	assert.NoError(t, err)
 	assert.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
+		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, model1.events)
 
 	t.Log("test projection aggregate")
 	model2 := mockEventHandler{}
-	p = eventstore.NewProjection(10, store, func(context.Context) (eventstore.Model, error) { return &model2, nil })
+	p = eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return &model2, nil })
 
-	err = p.Project(ctx, []eventstore.Query{
-		eventstore.Query{
-			GroupId:     aggregateID2Path.GroupId,
+	err = p.Project(ctx, []eventstore.QueryFromSnapshot{
+		eventstore.QueryFromSnapshot{
 			AggregateId: aggregateID2Path.AggregateId,
 		},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, mockEventHandler{events: []event.Event(nil)}, model2)
+	assert.Equal(t, []event.Event{
+		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
+	}, model2.events)
 
 }

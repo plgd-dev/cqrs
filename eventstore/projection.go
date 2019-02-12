@@ -37,6 +37,7 @@ func (am *aggregateModel) Update(e *event.EventUnmarshaler) (ignore bool, reload
 	switch {
 	case e.Version == 0 || am.SnapshotEventType() == e.EventType:
 		am.version = e.Version
+		am.hasSnapshot = true
 	case am.version+1 == e.Version && am.hasSnapshot:
 		am.version = e.Version
 	case am.version >= e.Version:
@@ -56,8 +57,7 @@ func (am *aggregateModel) Handle(ctx context.Context, iter event.Iter) error {
 
 // Projection projects events from eventstore to user model.
 type Projection struct {
-	store          EventStore
-	loaderTreshold int
+	store EventStore
 
 	factoryModel    FactoryModelFunc
 	lock            sync.Mutex
@@ -65,11 +65,10 @@ type Projection struct {
 }
 
 // NewProjection projection over eventstore.
-func NewProjection(loaderTreshold int, store EventStore, factoryModel FactoryModelFunc) *Projection {
+func NewProjection(store EventStore, factoryModel FactoryModelFunc) *Projection {
 	return &Projection{
 		store:           store,
 		factoryModel:    factoryModel,
-		loaderTreshold:  loaderTreshold,
 		aggregateModels: make(map[string]map[string]*aggregateModel),
 	}
 }
@@ -81,7 +80,7 @@ type iterator struct {
 
 	nextEventToProcess *event.EventUnmarshaler
 	err                error
-	reload             *Query
+	reload             *QueryFromVersion
 }
 
 func (i *iterator) Rewind(ctx context.Context) {
@@ -114,7 +113,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		i.firstEvent = nil
 		ignore, reload := i.model.Update(tmp)
 		if reload {
-			i.reload = &Query{AggregateId: e.AggregateId, GroupId: e.GroupId, FromVersion: i.model.version}
+			i.reload = &QueryFromVersion{AggregateId: e.AggregateId, Version: i.model.version}
 			i.Rewind(ctx)
 			return false
 		}
@@ -159,13 +158,13 @@ func (p *Projection) getModel(ctx context.Context, groupId, aggregateId string) 
 	return apm, nil
 }
 
-func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries []Query, err error) {
+func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries []QueryFromVersion, err error) {
 	var e event.EventUnmarshaler
 	if !iter.Next(ctx, &e) {
 		return nil, iter.Err()
 	}
 	ie := &e
-	reloadQueries = make([]Query, 0, 32)
+	reloadQueries = make([]QueryFromVersion, 0, 32)
 	for ie != nil {
 		am, err := p.getModel(ctx, ie.GroupId, ie.AggregateId)
 		if err != nil {
@@ -216,7 +215,7 @@ func (p *Projection) HandleWithReload(ctx context.Context, iter event.Iter) erro
 	}
 
 	if len(reloadQueries) > 0 {
-		err := p.store.Load(ctx, reloadQueries, p)
+		err := p.store.LoadFromVersion(ctx, reloadQueries, p)
 		if err != nil {
 			return fmt.Errorf("cannot reload events for db: %v", err)
 		}
@@ -225,12 +224,12 @@ func (p *Projection) HandleWithReload(ctx context.Context, iter event.Iter) erro
 }
 
 // Project update projection from snapshots defined by query. Verson in Query is ignored.
-func (p *Projection) Project(ctx context.Context, queries []Query) (err error) {
-	return p.store.Load(ctx, queries, p)
+func (p *Projection) Project(ctx context.Context, queries []QueryFromSnapshot) (err error) {
+	return p.store.LoadFromSnapshot(ctx, queries, p)
 }
 
 // Forget drop projection by query.Verson in Query is ignored.
-func (p *Projection) Forget(queries []Query) (err error) {
+func (p *Projection) Forget(queries []QueryFromSnapshot) (err error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for _, query := range queries {
@@ -262,7 +261,7 @@ func (p *Projection) allModels(models map[string]Model) map[string]Model {
 	return models
 }
 
-func (p *Projection) models(queries []Query) map[string]Model {
+func (p *Projection) models(queries []QueryFromSnapshot) map[string]Model {
 	models := make(map[string]Model)
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -293,7 +292,7 @@ func (p *Projection) models(queries []Query) map[string]Model {
 }
 
 // Models return models from projection.
-func (p *Projection) Models(queries []Query) []Model {
+func (p *Projection) Models(queries []QueryFromSnapshot) []Model {
 	models := p.models(queries)
 	result := make([]Model, 0, len(models))
 	for _, m := range models {

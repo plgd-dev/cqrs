@@ -19,7 +19,7 @@ func TestEventStore(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := NewEventStore(url, "test_mongodb", "events", bson.Marshal, bson.Unmarshal)
+	store, err := NewEventStore(url, "test_mongodb", "events", 1, bson.Marshal, bson.Unmarshal)
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 

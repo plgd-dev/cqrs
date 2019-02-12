@@ -27,7 +27,7 @@ type Projection struct {
 }
 
 // NewProjection creates projection.
-func NewProjection(ctx context.Context, loaderTreshold int, store eventstore.EventStore, subscriptionId string, subscriber eventbus.Subscriber, factoryModel eventstore.FactoryModelFunc) (*Projection, error) {
+func NewProjection(ctx context.Context, store eventstore.EventStore, subscriptionId string, subscriber eventbus.Subscriber, factoryModel eventstore.FactoryModelFunc) (*Projection, error) {
 	if store == nil {
 		return nil, errors.New("invalid handle of event store")
 	}
@@ -35,7 +35,7 @@ func NewProjection(ctx context.Context, loaderTreshold int, store eventstore.Eve
 	projCtx, projCancel := context.WithCancel(ctx)
 
 	rd := Projection{
-		projection:     eventstore.NewProjection(loaderTreshold, store, factoryModel),
+		projection:     eventstore.NewProjection(store, factoryModel),
 		ctx:            projCtx,
 		cancel:         projCancel,
 		subscriber:     subscriber,
@@ -46,12 +46,12 @@ func NewProjection(ctx context.Context, loaderTreshold int, store eventstore.Eve
 }
 
 // Project load events from aggregates that below to path.
-func (p *Projection) Project(ctx context.Context, query []eventstore.Query) error {
+func (p *Projection) Project(ctx context.Context, query []eventstore.QueryFromSnapshot) error {
 	return p.projection.Project(ctx, query)
 }
 
 // Forget projection for certain query.
-func (p *Projection) Forget(query []eventstore.Query) error {
+func (p *Projection) Forget(query []eventstore.QueryFromSnapshot) error {
 	return p.projection.Forget(query)
 }
 
@@ -84,7 +84,7 @@ func (p *Projection) SubscribeTo(topics []string) error {
 }
 
 // Models get models from projection
-func (p *Projection) Models(queries []eventstore.Query) []eventstore.Model {
+func (p *Projection) Models(queries []eventstore.QueryFromSnapshot) []eventstore.Model {
 	return p.projection.Models(queries)
 }
 

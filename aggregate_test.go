@@ -120,19 +120,22 @@ func (rs *ResourceStateSnapshotTaken) Handle(ctx context.Context, iter event.Ite
 				return err
 			}
 			*rs = s
-			return nil
 		case http.ProtobufContentType(&events.ResourcePublished{}):
 			var s ResourcePublished
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
-			return rs.HandleEventResourcePublished(ctx, s)
+			if err := rs.HandleEventResourcePublished(ctx, s); err != nil {
+				return err
+			}
 		case http.ProtobufContentType(&events.ResourceUnpublished{}):
 			var s ResourceUnpublished
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
-			return rs.HandleEventResourceUnpublished(ctx, s)
+			if err := rs.HandleEventResourceUnpublished(ctx, s); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -245,7 +248,7 @@ func TestAggregate(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 128, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -320,9 +323,16 @@ func TestAggregate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	p := eventstore.NewProjection(1, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	handler := &mockEventHandler{}
+	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil })
 
-	err = p.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: path.GroupId, AggregateId: path.AggregateId}})
+	err = p.Project(ctx, []eventstore.QueryFromSnapshot{
+		eventstore.QueryFromSnapshot{
+			GroupId:           path.GroupId,
+			AggregateId:       path.AggregateId,
+			SnapshotEventType: handler.SnapshotEventType(),
+		},
+	})
 	assert.NoError(t, err)
 
 	//assert.Equal(t, nil, model.(*mockEventHandler).events)

@@ -59,7 +59,7 @@ func TestProjection(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := mongodb.NewEventStore(url, "test_projection", "events", func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(url, "test_projection", "events", 128, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -151,6 +151,11 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 
+	snapshotEventType := func() string {
+		s := &ResourceStateSnapshotTaken{}
+		return s.SnapshotEventType()
+	}
+
 	a2, err := NewAggregate(path2.GroupId, path2.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
@@ -160,14 +165,26 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 
-	projection, err := NewProjection(ctx, 1, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	projection, err := NewProjection(ctx, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
 	assert.NoError(t, err)
 
-	err = projection.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: path1.GroupId, AggregateId: path1.AggregateId}})
+	err = projection.Project(ctx, []eventstore.QueryFromSnapshot{
+		eventstore.QueryFromSnapshot{
+			GroupId:           path1.GroupId,
+			AggregateId:       path1.AggregateId,
+			SnapshotEventType: snapshotEventType(),
+		},
+	})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(projection.Models(nil)))
 
-	err = projection.Project(ctx, []eventstore.Query{eventstore.Query{GroupId: path2.GroupId, AggregateId: path2.AggregateId}})
+	err = projection.Project(ctx, []eventstore.QueryFromSnapshot{
+		eventstore.QueryFromSnapshot{
+			GroupId:           path2.GroupId,
+			AggregateId:       path2.AggregateId,
+			SnapshotEventType: snapshotEventType(),
+		},
+	})
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(projection.Models(nil)))
 
@@ -204,7 +221,13 @@ func TestProjection(t *testing.T) {
 
 	time.Sleep(waitForSubscription)
 
-	err = projection.Forget([]eventstore.Query{eventstore.Query{GroupId: path3.GroupId, AggregateId: path3.AggregateId}})
+	err = projection.Forget([]eventstore.QueryFromSnapshot{
+		eventstore.QueryFromSnapshot{
+			GroupId:           path3.GroupId,
+			AggregateId:       path3.AggregateId,
+			SnapshotEventType: snapshotEventType(),
+		},
+	})
 	assert.NoError(t, err)
 
 	evs, err = a3.HandleCommand(ctx, commandUnpub3)

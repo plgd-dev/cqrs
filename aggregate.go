@@ -66,10 +66,8 @@ func (a *Aggregate) saveEvents(ctx context.Context, numEvents int, model Aggrega
 			// events are stored in eventstore that means we cannot resolve this issue
 			return nil, false, nil
 		}
-		_, err = a.store.Save(ctx, a.groupId, a.aggregateId, []event.Event{snapshotEvent})
+		_, err = a.store.SaveSnapshot(ctx, a.groupId, a.aggregateId, snapshotEvent)
 		if err == nil {
-			// events are stored in eventstore that means we cannot resolve this issue
-			_ = a.store.SaveSnapshotQuery(ctx, a.groupId, a.aggregateId, snapshotEvent.Version())
 			events = append(events, snapshotEvent)
 		}
 	}
@@ -130,13 +128,19 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Eve
 			return nil, fmt.Errorf("aggregate cannot create model: %v", err)
 		}
 		amodel := &aggrModel{model: model}
-		ep := eventstore.NewProjection(1, a.store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil })
-		err = ep.Project(ctx, []eventstore.Query{eventstore.Query{AggregateId: a.aggregateId, GroupId: a.groupId}})
+		ep := eventstore.NewProjection(a.store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil })
+		err = ep.Project(ctx, []eventstore.QueryFromSnapshot{
+			eventstore.QueryFromSnapshot{
+				AggregateId:       a.aggregateId,
+				GroupId:           a.groupId,
+				SnapshotEventType: model.SnapshotEventType(),
+			},
+		})
 
 		if err != nil {
 			return nil, fmt.Errorf("aggregate cannot load model: %v", err)
 		}
-		if amodel.numEvents > 0 {
+		if amodel.numEvents > 0 || amodel.lastVersion > 0 {
 			amodel.lastVersion++
 		}
 		newEvents, err := model.HandleCommand(ctx, cmd, amodel.lastVersion)
