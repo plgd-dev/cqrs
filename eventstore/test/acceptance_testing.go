@@ -199,7 +199,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 		{
 			GroupId:     aggregateID1Path.GroupId,
 			AggregateId: aggregateID1Path.AggregateId,
-			Version:     savedEvents[2].Version(),
+			FromVersion: savedEvents[2].Version(),
 		},
 	}, &eh3)
 	assert.NoError(t, err)
@@ -281,4 +281,5 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, mockEventHandler{events: []event.Event(nil)}, model2)
+
 }

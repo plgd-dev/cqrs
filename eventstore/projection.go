@@ -74,42 +74,6 @@ func NewProjection(loaderTreshold int, store EventStore, factoryModel FactoryMod
 	}
 }
 
-type loader struct {
-	store      EventStore
-	projection *Projection
-	queries    []Query
-	threshold  int
-}
-
-func (l *loader) loadEvents(ctx context.Context) error {
-	err := l.store.Load(ctx, l.queries, l.projection)
-	if err != nil {
-		return fmt.Errorf("cannot load events to eventstore model: %v", err)
-	}
-	l.queries = l.queries[:0]
-	return nil
-}
-
-func (l *loader) QueryHandle(ctx context.Context, iter QueryIter) error {
-	var query Query
-	for iter.Next(ctx, &query) {
-		l.queries = append(l.queries, query)
-		if len(l.queries) == l.threshold {
-			err := l.loadEvents(ctx)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	if iter.Err() != nil {
-		return iter.Err()
-	}
-	if len(l.queries) > 0 {
-		return l.loadEvents(ctx)
-	}
-	return nil
-}
-
 type iterator struct {
 	iter       event.Iter
 	firstEvent *event.EventUnmarshaler
@@ -150,7 +114,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		i.firstEvent = nil
 		ignore, reload := i.model.Update(tmp)
 		if reload {
-			i.reload = &Query{AggregateId: e.AggregateId, GroupId: e.GroupId, Version: i.model.version}
+			i.reload = &Query{AggregateId: e.AggregateId, GroupId: e.GroupId, FromVersion: i.model.version}
 			i.Rewind(ctx)
 			return false
 		}
@@ -262,11 +226,7 @@ func (p *Projection) HandleWithReload(ctx context.Context, iter event.Iter) erro
 
 // Project update projection from snapshots defined by query. Verson in Query is ignored.
 func (p *Projection) Project(ctx context.Context, queries []Query) (err error) {
-	return p.store.LoadSnapshotQueries(ctx, queries, &loader{
-		store:      p.store,
-		projection: p,
-		threshold:  p.loaderTreshold,
-	})
+	return p.store.Load(ctx, queries, p)
 }
 
 // Forget drop projection by query.Verson in Query is ignored.

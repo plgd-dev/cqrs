@@ -78,9 +78,10 @@ func (a *Aggregate) saveEvents(ctx context.Context, numEvents int, model Aggrega
 }
 
 type aggrIterator struct {
-	iter        event.Iter
-	lastVersion uint64
-	numEvents   int
+	iter              event.Iter
+	lastVersion       uint64
+	numEvents         int
+	snapshotEventType string
 }
 
 func (i *aggrIterator) Next(ctx context.Context, event *event.EventUnmarshaler) bool {
@@ -88,7 +89,11 @@ func (i *aggrIterator) Next(ctx context.Context, event *event.EventUnmarshaler) 
 		return false
 	}
 	i.lastVersion = event.Version
-	i.numEvents++
+	if event.EventType != i.snapshotEventType {
+		i.numEvents++
+	} else {
+		i.numEvents = 0
+	}
 	return true
 }
 
@@ -108,7 +113,8 @@ func (ah *aggrModel) SnapshotEventType() string {
 
 func (ah *aggrModel) Handle(ctx context.Context, iter event.Iter) error {
 	i := aggrIterator{
-		iter: iter,
+		iter:              iter,
+		snapshotEventType: ah.SnapshotEventType(),
 	}
 	err := ah.model.Handle(ctx, &i)
 	ah.lastVersion = i.lastVersion

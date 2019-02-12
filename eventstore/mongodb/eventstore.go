@@ -180,6 +180,14 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 	return s.saveEvent(col, groupId, aggregateId, events[0])
 }
 
+func (s *EventStore) SaveSnapshot(ctx context.Context, groupId string, aggregateId string, ev event.Event) (concurrencyException bool, err error) {
+	concurrencyException, err = s.Save(ctx, groupId, aggregateId, []event.Event{ev})
+	if err != nil {
+		return false, s.SaveSnapshotQuery(ctx, groupId, aggregateId, ev.Version())
+	}
+	return concurrencyException, err
+}
+
 type iterator struct {
 	iter            *mgo.Iter
 	dataUnmarshaler event.UnmarshalerFunc
@@ -211,7 +219,7 @@ func eventQueriesToMgoQuery(queries []eventstore.Query) bson.M {
 
 	for _, q := range queries {
 		andQueries := make([]bson.M, 0, 4)
-		andQueries = append(andQueries, bson.M{versionKey: bson.M{"$gte": q.Version}})
+		andQueries = append(andQueries, bson.M{versionKey: bson.M{"$gte": q.FromVersion}})
 		if q.AggregateId != "" {
 			andQueries = append(andQueries, bson.M{aggregateIdKey: q.AggregateId})
 		}
@@ -227,8 +235,52 @@ func eventQueriesToMgoQuery(queries []eventstore.Query) bson.M {
 	return bson.M{versionKey: bson.M{"$gte": 0}}
 }
 
-// Load loads events from begining.
-func (s *EventStore) Load(ctx context.Context, queries []eventstore.Query, eh event.Handler) error {
+type loader struct {
+	store        *EventStore
+	eventHandler event.Handler
+	queries      []eventstore.Query
+	threshold    int
+}
+
+func (l *loader) loadEvents(ctx context.Context) error {
+
+	for len(l.queries) != 0 {
+		num := len(l.queries)
+		if num > l.threshold {
+			num = l.threshold
+		}
+
+		err := l.store.load(ctx, l.queries[:num], l.eventHandler)
+		if err != nil {
+			return fmt.Errorf("cannot load events to eventstore model: %v", err)
+		}
+		l.queries = l.queries[num:]
+	}
+
+	return nil
+}
+
+func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
+	var query eventstore.Query
+	for iter.Next(ctx, &query) {
+		l.queries = append(l.queries, query)
+		if len(l.queries) >= l.threshold {
+			err := l.loadEvents(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if iter.Err() != nil {
+		return iter.Err()
+	}
+	if len(l.queries) > 0 {
+		return l.loadEvents(ctx)
+	}
+	return nil
+}
+
+func (s *EventStore) load(ctx context.Context, queries []eventstore.Query, eh event.Handler) error {
 	sess := s.session.Copy()
 	defer sess.Close()
 
@@ -245,6 +297,26 @@ func (s *EventStore) Load(ctx context.Context, queries []eventstore.Query, eh ev
 		return errClose
 	}
 	return err
+}
+
+// Load loads events from begining.
+func (s *EventStore) Load(ctx context.Context, queries []eventstore.Query, eh event.Handler) error {
+	snapshotQueries := make([]eventstore.Query, 0, len(queries))
+	versionQueries := make([]eventstore.Query, 0, len(queries))
+	for _, q := range queries {
+		if q.FromSnapshotEventType != "" {
+			snapshotQueries = append(snapshotQueries, q)
+		} else {
+			versionQueries = append(versionQueries, q)
+		}
+
+	}
+
+	return s.LoadSnapshotQueries(ctx, queries, &loader{
+		store:        s,
+		eventHandler: eh,
+		queries:      versionQueries,
+	})
 }
 
 // DBName returns db name
@@ -389,7 +461,7 @@ func (i *queryIterator) Next(ctx context.Context, q *eventstore.Query) bool {
 		return false
 	}
 
-	q.Version = query.Version
+	q.FromVersion = query.Version
 	q.AggregateId = query.AggregateId
 	q.GroupId = query.GroupId
 	return true
@@ -399,7 +471,7 @@ func (i *queryIterator) Err() error {
 	return i.iter.Err()
 }
 
-func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.Query, qh eventstore.QueryHandler) error {
+func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.Query, qh *loader) error {
 	sess := s.session.Copy()
 	defer sess.Close()
 
