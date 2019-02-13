@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
+	"github.com/go-ocf/kit/log"
 )
 
 const eventCName = "events"
@@ -206,13 +207,15 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	if !i.iter.Next(&event) {
 		return false
 	}
+	log.Debugf("mongodb.iterator.next: ResourceId %v: DeviceId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
 
 	e.Version = event.Version
 	e.AggregateId = event.AggregateId
 	e.EventType = event.EventType
 	e.GroupId = event.GroupId
+	data := event.Data.Data
 	e.Unmarshal = func(v interface{}) error {
-		return i.dataUnmarshaler(event.Data.Data, v)
+		return i.dataUnmarshaler(data, v)
 	}
 	return true
 }

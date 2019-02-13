@@ -115,11 +115,11 @@ func (rs *ResourceStateSnapshotTaken) Handle(ctx context.Context, iter event.Ite
 		}
 		switch eu.EventType {
 		case http.ProtobufContentType(&events.ResourceStateSnapshotTaken{}):
-			var s ResourceStateSnapshotTaken
+			var s events.ResourceStateSnapshotTaken
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
-			*rs = s
+			rs.ResourceStateSnapshotTaken = s
 		case http.ProtobufContentType(&events.ResourcePublished{}):
 			var s ResourcePublished
 			if err := eu.Unmarshal(&s); err != nil {
@@ -294,32 +294,41 @@ func TestAggregate(t *testing.T) {
 		AuthorizationContext: &commands.AuthorizationContext{},
 	}
 
-	a, err := NewAggregate(path.GroupId, path.AggregateId, 1, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
-	})
-	assert.NoError(t, err)
+	newAggragate := func() *Aggregate {
+		a, err := NewAggregate(path.GroupId, path.AggregateId, 128, store, func(context.Context) (AggregateModel, error) {
+			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		})
+		assert.NoError(t, err)
+		return a
+	}
 
+	a := newAggragate()
 	events, err := a.HandleCommand(ctx, commandPub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandPub)
+	b := newAggragate()
+	events, err = b.HandleCommand(ctx, commandPub)
 	assert.Error(t, err)
 	assert.Nil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandUnpub)
+	c := newAggragate()
+	events, err = c.HandleCommand(ctx, commandUnpub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandUnpub)
+	d := newAggragate()
+	events, err = d.HandleCommand(ctx, commandUnpub)
 	assert.Error(t, err)
 	assert.Nil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandPub)
+	e := newAggragate()
+	events, err = e.HandleCommand(ctx, commandPub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandUnpub)
+	f := newAggragate()
+	events, err = f.HandleCommand(ctx, commandUnpub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 

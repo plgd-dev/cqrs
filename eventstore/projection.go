@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/go-ocf/cqrs/event"
+	"github.com/go-ocf/kit/log"
 )
 
 // Model user defined model where events from eventstore will be projected.
@@ -112,6 +113,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		tmp := i.firstEvent
 		i.firstEvent = nil
 		ignore, reload := i.model.Update(tmp)
+		log.Debugf("projection.iterator.next: ResourceId %v: DeviceId %v: Version %v, EvenType %v, ignore %v reload %v", e.GroupId, e.AggregateId, e.Version, e.EventType, ignore, reload)
 		if reload {
 			i.reload = &QueryFromVersion{AggregateId: e.AggregateId, Version: i.model.version}
 			i.Rewind(ctx)
