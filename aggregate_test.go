@@ -278,7 +278,12 @@ func TestAggregate(t *testing.T) {
 
 	path := Path{
 		GroupId:     "1",
-		AggregateId: "ID2",
+		AggregateId: "ID0",
+	}
+
+	path1 := Path{
+		GroupId:     "1",
+		AggregateId: "ID1",
 	}
 
 	commandPub := commands.PublishResourceRequest{
@@ -291,6 +296,19 @@ func TestAggregate(t *testing.T) {
 
 	commandUnpub := commands.UnpublishResourceRequest{
 		ResourceId:           path.AggregateId,
+		AuthorizationContext: &commands.AuthorizationContext{},
+	}
+
+	commandPub1 := commands.PublishResourceRequest{
+		ResourceId: path1.AggregateId,
+		Resource: &resources.Resource{
+			Id: path1.AggregateId,
+		},
+		AuthorizationContext: &commands.AuthorizationContext{},
+	}
+
+	commandUnpub1 := commands.UnpublishResourceRequest{
+		ResourceId:           path1.AggregateId,
 		AuthorizationContext: &commands.AuthorizationContext{},
 	}
 
@@ -323,12 +341,22 @@ func TestAggregate(t *testing.T) {
 	assert.Nil(t, events)
 
 	e := newAggragate()
-	events, err = e.HandleCommand(ctx, commandPub)
+	events, err = e.HandleCommand(ctx, commandPub1)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
 	f := newAggragate()
-	events, err = f.HandleCommand(ctx, commandUnpub)
+	events, err = f.HandleCommand(ctx, commandUnpub1)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
+
+	g := newAggragate()
+	events, err = g.HandleCommand(ctx, commandPub)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
+
+	h := newAggragate()
+	events, err = h.HandleCommand(ctx, commandUnpub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 

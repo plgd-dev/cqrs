@@ -41,7 +41,7 @@ func (am *aggregateModel) Update(e *event.EventUnmarshaler) (ignore bool, reload
 		am.hasSnapshot = true
 	case am.version+1 == e.Version && am.hasSnapshot:
 		am.version = e.Version
-	case am.version >= e.Version:
+	case am.version >= e.Version && am.hasSnapshot:
 		//ignore event - it was already applied
 		return true, false
 	default:
@@ -113,9 +113,9 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		tmp := i.firstEvent
 		i.firstEvent = nil
 		ignore, reload := i.model.Update(tmp)
-		log.Debugf("projection.iterator.next: ResourceId %v: DeviceId %v: Version %v, EvenType %v, ignore %v reload %v", e.GroupId, e.AggregateId, e.Version, e.EventType, ignore, reload)
+		log.Debugf("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", tmp.GroupId, tmp.AggregateId, tmp.Version, tmp.EventType, ignore, reload)
 		if reload {
-			i.reload = &QueryFromVersion{AggregateId: e.AggregateId, Version: i.model.version}
+			i.reload = &QueryFromVersion{AggregateId: tmp.AggregateId, Version: i.model.version}
 			i.Rewind(ctx)
 			return false
 		}
@@ -129,6 +129,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	}
 
 	if i.RewindIgnore(ctx, e) {
+		log.Debugf("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", e.GroupId, e.AggregateId, e.Version, e.EventType)
 		return true
 	}
 	return false

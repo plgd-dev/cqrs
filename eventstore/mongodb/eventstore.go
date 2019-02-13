@@ -207,7 +207,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	if !i.iter.Next(&event) {
 		return false
 	}
-	log.Debugf("mongodb.iterator.next: ResourceId %v: DeviceId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
+	log.Debugf("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
 
 	e.Version = event.Version
 	e.AggregateId = event.AggregateId
