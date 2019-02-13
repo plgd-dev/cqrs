@@ -10,6 +10,7 @@ import (
 
 	resources "github.com/go-ocf/resource-aggregate/protobuf"
 	"github.com/go-ocf/resource-aggregate/protobuf/commands"
+	"github.com/panjf2000/ants"
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
@@ -101,7 +102,7 @@ func (rs *ResourceStateSnapshotTaken) HandleEventResourcePublished(ctx context.C
 
 func (rs *ResourceStateSnapshotTaken) HandleEventResourceUnpublished(ctx context.Context, pub ResourceUnpublished) error {
 	if !rs.IsPublished {
-		return fmt.Errorf("already published")
+		return fmt.Errorf("already unpublished")
 	}
 	rs.IsPublished = false
 	return nil
@@ -196,7 +197,7 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 		}}
 		err := rs.HandleEventResourceUnpublished(ctx, ru)
 		if err != nil {
-			return nil, fmt.Errorf("cannot handle resource publish: %v", err)
+			return nil, fmt.Errorf("cannot handle resource unpublish: %v", err)
 		}
 		return []event.Event{ru}, nil
 	}
@@ -248,7 +249,11 @@ func TestAggregate(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 128, func(v interface{}) ([]byte, error) {
+	pool, err := ants.NewPool(16)
+	assert.NoError(t, err)
+	defer pool.Release()
+
+	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 128, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}

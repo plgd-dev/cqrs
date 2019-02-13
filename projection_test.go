@@ -12,6 +12,7 @@ import (
 	resources "github.com/go-ocf/resource-aggregate/protobuf"
 	"github.com/go-ocf/resource-aggregate/protobuf/commands"
 	"github.com/gofrs/uuid"
+	"github.com/panjf2000/ants"
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore"
@@ -59,7 +60,11 @@ func TestProjection(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := mongodb.NewEventStore(url, "test_projection", "events", 128, func(v interface{}) ([]byte, error) {
+	pool, err := ants.NewPool(16)
+	assert.NoError(t, err)
+	defer pool.Release()
+
+	store, err := mongodb.NewEventStore(url, "test_projection", "events", 128, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}

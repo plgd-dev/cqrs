@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/globalsign/mgo/txn"
+	"github.com/panjf2000/ants"
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
@@ -32,6 +34,7 @@ var eventsQueryAggregateIdIndex = []string{versionKey, aggregateIdKey}
 // EventStore implements an EventStore for MongoDB.
 type EventStore struct {
 	session         *mgo.Session
+	pool            *ants.Pool
 	dbPrefix        string
 	colPrefix       string
 	batchSize       int
@@ -40,7 +43,7 @@ type EventStore struct {
 }
 
 // NewEventStore creates a new EventStore.
-func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc) (*EventStore, error) {
+func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc) (*EventStore, error) {
 	session, err := mgo.Dial(url)
 	if err != nil {
 		return nil, fmt.Errorf("could not dial database: %v", err)
@@ -49,13 +52,16 @@ func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, eventM
 	session.SetMode(mgo.Strong, true)
 	session.SetSafe(&mgo.Safe{W: 1})
 
-	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, eventMarshaler, eventUnmarshaler)
+	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, pool, eventMarshaler, eventUnmarshaler)
 }
 
 // NewEventStoreWithSession creates a new EventStore with a session.
-func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc) (*EventStore, error) {
+func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc) (*EventStore, error) {
 	if session == nil {
 		return nil, errors.New("no database session")
+	}
+	if pool == nil {
+		return nil, errors.New("no goroutine pool")
 	}
 
 	if eventMarshaler == nil {
@@ -78,6 +84,7 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 	}
 
 	s := &EventStore{
+		pool:            pool,
 		session:         session,
 		dbPrefix:        dbPrefix,
 		colPrefix:       colPrefix,
@@ -247,45 +254,53 @@ func queriesFromVersionToMgoQuery(queries []eventstore.QueryFromVersion) (bson.M
 type loader struct {
 	store        *EventStore
 	eventHandler event.Handler
-	queries      []eventstore.QueryFromVersion
-	batchSize    int
 }
 
-func (l *loader) loadEvents(ctx context.Context) error {
-
-	for len(l.queries) != 0 {
-		num := len(l.queries)
-		if num > l.batchSize {
-			num = l.batchSize
-		}
-
-		err := l.store.LoadFromVersion(ctx, l.queries[:num], l.eventHandler)
-		if err != nil {
-			return fmt.Errorf("cannot load events to eventstore model: %v", err)
-		}
-		l.queries = l.queries[num:]
+func (l *loader) loadEvents(ctx context.Context, queries []eventstore.QueryFromVersion) error {
+	err := l.store.LoadFromVersion(ctx, queries, l.eventHandler)
+	if err != nil {
+		return fmt.Errorf("cannot load events to eventstore model: %v", err)
 	}
-
 	return nil
 }
 
 func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
 	var query eventstore.QueryFromVersion
+	queries := make([]eventstore.QueryFromVersion, 0, 128)
+	var wg sync.WaitGroup
+
+	var errors []error
+	var errorsLock sync.Mutex
+
 	for iter.Next(ctx, &query) {
-		l.queries = append(l.queries, query)
-		if len(l.queries) >= l.batchSize {
-			err := l.loadEvents(ctx)
-			if err != nil {
-				return err
-			}
+		queries = append(queries, query)
+		if len(queries) >= l.store.batchSize {
+			wg.Add(1)
+			tmp := queries
+			l.store.pool.Submit(func() {
+				defer wg.Done()
+				err := l.store.LoadFromVersion(ctx, tmp, l.eventHandler)
+				if err != nil {
+					errorsLock.Lock()
+					defer errorsLock.Unlock()
+					errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %v", err))
+				}
+			})
+			queries = make([]eventstore.QueryFromVersion, 0, 128)
 		}
 	}
+	wg.Wait()
+	if len(errors) > 0 {
+		return fmt.Errorf("loader cannot load events: %v", errors)
+	}
+
 	if iter.Err() != nil {
 		return iter.Err()
 	}
-	if len(l.queries) > 0 {
-		return l.loadEvents(ctx)
+	if len(queries) > 0 {
+		return l.loadEvents(ctx, queries)
 	}
+
 	return nil
 }
 
@@ -319,8 +334,6 @@ func (s *EventStore) LoadFromSnapshot(ctx context.Context, queries []eventstore.
 	return s.LoadSnapshotQueries(ctx, queries, &loader{
 		store:        s,
 		eventHandler: eventHandler,
-		queries:      nil,
-		batchSize:    s.batchSize,
 	})
 }
 
