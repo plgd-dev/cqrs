@@ -25,15 +25,17 @@ type Path2TopicsFunc func(groupId, aggregateId string, event event.Event) []stri
 
 // Aggregate holds data for Handle command
 type Aggregate struct {
-	groupId             string
-	aggregateId         string
-	numEventsInSnapshot int
-	store               eventstore.EventStore
-	factoryModel        func(ctx context.Context) (AggregateModel, error)
+	groupId                 string
+	aggregateId             string
+	limitResolveConcurrency int
+	numEventsInSnapshot     int
+	store                   eventstore.EventStore
+	factoryModel            func(ctx context.Context) (AggregateModel, error)
 }
 
 // NewAggregate creates aggregate. it load and store events created from commands
-func NewAggregate(groupId, aggregateId string, numEventsInSnapshot int, store eventstore.EventStore, factoryModel func(ctx context.Context) (AggregateModel, error)) (*Aggregate, error) {
+func NewAggregate(groupId, aggregateId string, limitResolveConcurrency int, numEventsInSnapshot int, store eventstore.EventStore, factoryModel func(ctx context.Context) (AggregateModel, error)) (*Aggregate, error) {
+
 	if aggregateId == "" {
 		return nil, errors.New("invalid aggregateId")
 	}
@@ -41,12 +43,17 @@ func NewAggregate(groupId, aggregateId string, numEventsInSnapshot int, store ev
 		return nil, errors.New("invalid eventstore")
 	}
 
+	if limitResolveConcurrency < 1 {
+		limitResolveConcurrency = 1
+	}
+
 	return &Aggregate{
-		groupId:             groupId,
-		aggregateId:         aggregateId,
-		numEventsInSnapshot: numEventsInSnapshot,
-		store:               store,
-		factoryModel:        factoryModel,
+		groupId:                 groupId,
+		aggregateId:             aggregateId,
+		numEventsInSnapshot:     numEventsInSnapshot,
+		store:                   store,
+		factoryModel:            factoryModel,
+		limitResolveConcurrency: limitResolveConcurrency,
 	}, nil
 }
 
@@ -122,7 +129,7 @@ func (ah *aggrModel) Handle(ctx context.Context, iter event.Iter) error {
 
 // HandleCommand transforms command to a event, store and publish event.
 func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Event, error) {
-	for {
+	for i := 0; i < a.limitResolveConcurrency; i++ {
 		model, err := a.factoryModel(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("aggregate cannot create model: %v", err)
@@ -157,4 +164,5 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Eve
 		}
 		return saveEvents, err
 	}
+	return nil, fmt.Errorf("aggregate model cannot handle command: resolve concurrency exception reach limit")
 }

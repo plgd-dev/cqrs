@@ -313,7 +313,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	newAggragate := func() *Aggregate {
-		a, err := NewAggregate(path.GroupId, path.AggregateId, 128, store, func(context.Context) (AggregateModel, error) {
+		a, err := NewAggregate(path.GroupId, path.AggregateId, 1, 128, store, func(context.Context) (AggregateModel, error) {
 			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 		})
 		assert.NoError(t, err)

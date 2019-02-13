@@ -142,7 +142,7 @@ func TestProjection(t *testing.T) {
 		}
 	*/
 
-	a1, err := NewAggregate(path1.GroupId, path1.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
+	a1, err := NewAggregate(path1.GroupId, path1.AggregateId, 1, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
@@ -156,7 +156,7 @@ func TestProjection(t *testing.T) {
 		return s.SnapshotEventType()
 	}
 
-	a2, err := NewAggregate(path2.GroupId, path2.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
+	a2, err := NewAggregate(path2.GroupId, path2.AggregateId, 1, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
@@ -193,7 +193,7 @@ func TestProjection(t *testing.T) {
 
 	time.Sleep(waitForSubscription)
 
-	a3, err := NewAggregate(path3.GroupId, path3.AggregateId, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
+	a3, err := NewAggregate(path3.GroupId, path3.AggregateId, 1, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 	})
 	assert.NoError(t, err)
