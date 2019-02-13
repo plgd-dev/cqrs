@@ -66,8 +66,8 @@ func (a *Aggregate) saveEvents(ctx context.Context, numEvents int, model Aggrega
 			// events are stored in eventstore that means we cannot resolve this issue
 			return nil, false, nil
 		}
-		_, err = a.store.SaveSnapshot(ctx, a.groupId, a.aggregateId, snapshotEvent)
-		if err == nil {
+		_, errSnapshot := a.store.SaveSnapshot(ctx, a.groupId, a.aggregateId, snapshotEvent)
+		if errSnapshot == nil {
 			events = append(events, snapshotEvent)
 		}
 	}

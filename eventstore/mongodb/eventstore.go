@@ -423,7 +423,7 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 		},
 		sbSnap,
 	); err != nil {
-		if err == mgo.ErrNotFound {
+		if err == mgo.ErrNotFound || mgo.IsDup(err) {
 			// someone update store newer snapshot
 			return nil
 		}
