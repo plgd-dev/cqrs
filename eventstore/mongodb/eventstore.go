@@ -299,7 +299,7 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.Q
 	sess := s.session.Copy()
 	defer sess.Close()
 
-	iter := sess.DB(s.DBName()).C(eventCName).Find(q).Iter()
+	iter := sess.DB(s.DBName()).C(eventCName).Find(q).Hint(eventsQueryAggregateIdIndex...).Iter()
 
 	i := iterator{
 		iter:            iter,
