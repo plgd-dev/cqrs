@@ -35,16 +35,22 @@ func (am *aggregateModel) Update(e *event.EventUnmarshaler) (ignore bool, reload
 	am.lock.Lock()
 	defer am.lock.Unlock()
 
+	log.Debugf("projection.aggregateModel.Update: am.GroupId %v: AggregateId %v: Version %v, hasSnapshot %v", am.groupId, am.aggregateId, am.version, am.hasSnapshot)
+
 	switch {
 	case e.Version == 0 || am.SnapshotEventType() == e.EventType:
+		log.Debugf("projection.aggregateModel.Update: e.Version == 0 || am.SnapshotEventType() == e.EventType")
 		am.version = e.Version
 		am.hasSnapshot = true
 	case am.version+1 == e.Version && am.hasSnapshot:
+		log.Debugf("projection.aggregateModel.Update: am.version+1 == e.Version && am.hasSnapshot")
 		am.version = e.Version
 	case am.version >= e.Version && am.hasSnapshot:
+		log.Debugf("projection.aggregateModel.Update: am.version >= e.Version && am.hasSnapshot")
 		//ignore event - it was already applied
 		return true, false
 	default:
+		log.Debugf("projection.aggregateModel.Update: default")
 		//need to reload
 		return false, true
 	}
