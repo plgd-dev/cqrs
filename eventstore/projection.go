@@ -129,7 +129,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	}
 
 	if i.RewindIgnore(ctx, e) {
-		log.Debugf("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", e.GroupId, e.AggregateId, e.Version, e.EventType)
+		log.Debugf("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", e.GroupId, e.AggregateId, e.Version, e.EventType)
 		return true
 	}
 	return false
@@ -155,6 +155,7 @@ func (p *Projection) getModel(ctx context.Context, groupId, aggregateId string) 
 		if err != nil {
 			return nil, fmt.Errorf("cannot create model: %v", err)
 		}
+		log.Debugf("projection.Projection.getModel: GroupId %v: AggregateId %v: new model", groupId, aggregateId)
 		apm = &aggregateModel{groupId: groupId, aggregateId: aggregateId, model: model}
 		mapApm[aggregateId] = apm
 	}
@@ -169,6 +170,7 @@ func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries
 	ie := &e
 	reloadQueries = make([]QueryFromVersion, 0, 32)
 	for ie != nil {
+		log.Debugf("projection.iterator.handle: GroupId %v: AggregateId %v: Version %v, EvenType %v", ie.GroupId, ie.AggregateId, ie.Version, ie.EventType)
 		am, err := p.getModel(ctx, ie.GroupId, ie.AggregateId)
 		if err != nil {
 			return nil, fmt.Errorf("cannot handle projection: %v", err)
