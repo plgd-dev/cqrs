@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/go-ocf/cqrs/event"
-	"github.com/go-ocf/kit/log"
 )
 
 // Model user defined model where events from eventstore will be projected.
@@ -17,6 +16,7 @@ type Model interface {
 
 // FactoryModelFunc creates user model.
 type FactoryModelFunc func(ctx context.Context) (Model, error)
+type LogDebugfFunc func(fmt string, args ...interface{})
 
 type aggregateModel struct {
 	groupId     string
@@ -25,6 +25,8 @@ type aggregateModel struct {
 	version     uint64
 	hasSnapshot bool
 	lock        sync.Mutex
+
+	LogDebugfFunc LogDebugfFunc
 }
 
 func (am *aggregateModel) SnapshotEventType() string {
@@ -35,22 +37,22 @@ func (am *aggregateModel) Update(e *event.EventUnmarshaler) (ignore bool, reload
 	am.lock.Lock()
 	defer am.lock.Unlock()
 
-	log.Debugf("projection.aggregateModel.Update: am.GroupId %v: AggregateId %v: Version %v, hasSnapshot %v", am.groupId, am.aggregateId, am.version, am.hasSnapshot)
+	am.LogDebugfFunc("projection.aggregateModel.Update: am.GroupId %v: AggregateId %v: Version %v, hasSnapshot %v", am.groupId, am.aggregateId, am.version, am.hasSnapshot)
 
 	switch {
 	case e.Version == 0 || am.SnapshotEventType() == e.EventType:
-		log.Debugf("projection.aggregateModel.Update: e.Version == 0 || am.SnapshotEventType() == e.EventType")
+		am.LogDebugfFunc("projection.aggregateModel.Update: e.Version == 0 || am.SnapshotEventType() == e.EventType")
 		am.version = e.Version
 		am.hasSnapshot = true
 	case am.version+1 == e.Version && am.hasSnapshot:
-		log.Debugf("projection.aggregateModel.Update: am.version+1 == e.Version && am.hasSnapshot")
+		am.LogDebugfFunc("projection.aggregateModel.Update: am.version+1 == e.Version && am.hasSnapshot")
 		am.version = e.Version
 	case am.version >= e.Version && am.hasSnapshot:
-		log.Debugf("projection.aggregateModel.Update: am.version >= e.Version && am.hasSnapshot")
+		am.LogDebugfFunc("projection.aggregateModel.Update: am.version >= e.Version && am.hasSnapshot")
 		//ignore event - it was already applied
 		return true, false
 	default:
-		log.Debugf("projection.aggregateModel.Update: default")
+		am.LogDebugfFunc("projection.aggregateModel.Update: default")
 		//need to reload
 		return false, true
 	}
@@ -64,7 +66,8 @@ func (am *aggregateModel) Handle(ctx context.Context, iter event.Iter) error {
 
 // Projection projects events from eventstore to user model.
 type Projection struct {
-	store EventStore
+	store         EventStore
+	LogDebugfFunc LogDebugfFunc
 
 	factoryModel    FactoryModelFunc
 	lock            sync.Mutex
@@ -72,11 +75,15 @@ type Projection struct {
 }
 
 // NewProjection projection over eventstore.
-func NewProjection(store EventStore, factoryModel FactoryModelFunc) *Projection {
+func NewProjection(store EventStore, factoryModel FactoryModelFunc, LogDebugfFunc LogDebugfFunc) *Projection {
+	if LogDebugfFunc == nil {
+		LogDebugfFunc = func(fmt string, args ...interface{}) {}
+	}
 	return &Projection{
 		store:           store,
 		factoryModel:    factoryModel,
 		aggregateModels: make(map[string]map[string]*aggregateModel),
+		LogDebugfFunc:   LogDebugfFunc,
 	}
 }
 
@@ -119,7 +126,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		tmp := i.firstEvent
 		i.firstEvent = nil
 		ignore, reload := i.model.Update(tmp)
-		log.Debugf("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", tmp.GroupId, tmp.AggregateId, tmp.Version, tmp.EventType, ignore, reload)
+		i.model.LogDebugfFunc("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", tmp.GroupId, tmp.AggregateId, tmp.Version, tmp.EventType, ignore, reload)
 		if reload {
 			i.reload = &QueryFromVersion{AggregateId: tmp.AggregateId, Version: i.model.version}
 			i.Rewind(ctx)
@@ -135,7 +142,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	}
 
 	if i.RewindIgnore(ctx, e) {
-		log.Debugf("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", e.GroupId, e.AggregateId, e.Version, e.EventType)
+		i.model.LogDebugfFunc("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", e.GroupId, e.AggregateId, e.Version, e.EventType)
 		return true
 	}
 	return false
@@ -161,8 +168,8 @@ func (p *Projection) getModel(ctx context.Context, groupId, aggregateId string) 
 		if err != nil {
 			return nil, fmt.Errorf("cannot create model: %v", err)
 		}
-		log.Debugf("projection.Projection.getModel: GroupId %v: AggregateId %v: new model", groupId, aggregateId)
-		apm = &aggregateModel{groupId: groupId, aggregateId: aggregateId, model: model}
+		p.LogDebugfFunc("projection.Projection.getModel: GroupId %v: AggregateId %v: new model", groupId, aggregateId)
+		apm = &aggregateModel{groupId: groupId, aggregateId: aggregateId, model: model, LogDebugfFunc: p.LogDebugfFunc}
 		mapApm[aggregateId] = apm
 	}
 	return apm, nil
@@ -176,7 +183,7 @@ func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries
 	ie := &e
 	reloadQueries = make([]QueryFromVersion, 0, 32)
 	for ie != nil {
-		log.Debugf("projection.iterator.handle: GroupId %v: AggregateId %v: Version %v, EvenType %v", ie.GroupId, ie.AggregateId, ie.Version, ie.EventType)
+		p.LogDebugfFunc("projection.iterator.handle: GroupId %v: AggregateId %v: Version %v, EvenType %v", ie.GroupId, ie.AggregateId, ie.Version, ie.EventType)
 		am, err := p.getModel(ctx, ie.GroupId, ie.AggregateId)
 		if err != nil {
 			return nil, fmt.Errorf("cannot handle projection: %v", err)

@@ -27,7 +27,7 @@ type Projection struct {
 }
 
 // NewProjection creates projection.
-func NewProjection(ctx context.Context, store eventstore.EventStore, subscriptionId string, subscriber eventbus.Subscriber, factoryModel eventstore.FactoryModelFunc) (*Projection, error) {
+func NewProjection(ctx context.Context, store eventstore.EventStore, subscriptionId string, subscriber eventbus.Subscriber, factoryModel eventstore.FactoryModelFunc, LogDebugfFunc eventstore.LogDebugfFunc) (*Projection, error) {
 	if store == nil {
 		return nil, errors.New("invalid handle of event store")
 	}
@@ -35,7 +35,7 @@ func NewProjection(ctx context.Context, store eventstore.EventStore, subscriptio
 	projCtx, projCancel := context.WithCancel(ctx)
 
 	rd := Projection{
-		projection:     eventstore.NewProjection(store, factoryModel),
+		projection:     eventstore.NewProjection(store, factoryModel, LogDebugfFunc),
 		ctx:            projCtx,
 		cancel:         projCancel,
 		subscriber:     subscriber,

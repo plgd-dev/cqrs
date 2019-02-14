@@ -31,10 +31,11 @@ type Aggregate struct {
 	numEventsInSnapshot     int
 	store                   eventstore.EventStore
 	factoryModel            func(ctx context.Context) (AggregateModel, error)
+	LogDebugfFunc           eventstore.LogDebugfFunc
 }
 
 // NewAggregate creates aggregate. it load and store events created from commands
-func NewAggregate(groupId, aggregateId string, limitResolveConcurrency int, numEventsInSnapshot int, store eventstore.EventStore, factoryModel func(ctx context.Context) (AggregateModel, error)) (*Aggregate, error) {
+func NewAggregate(groupId, aggregateId string, limitResolveConcurrency int, numEventsInSnapshot int, store eventstore.EventStore, factoryModel func(ctx context.Context) (AggregateModel, error), LogDebugfFunc eventstore.LogDebugfFunc) (*Aggregate, error) {
 
 	if aggregateId == "" {
 		return nil, errors.New("invalid aggregateId")
@@ -54,6 +55,7 @@ func NewAggregate(groupId, aggregateId string, limitResolveConcurrency int, numE
 		store:                   store,
 		factoryModel:            factoryModel,
 		limitResolveConcurrency: limitResolveConcurrency,
+		LogDebugfFunc:           LogDebugfFunc,
 	}, nil
 }
 
@@ -135,7 +137,7 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Eve
 			return nil, fmt.Errorf("aggregate cannot create model: %v", err)
 		}
 		amodel := &aggrModel{model: model}
-		ep := eventstore.NewProjection(a.store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil })
+		ep := eventstore.NewProjection(a.store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil }, a.LogDebugfFunc)
 		err = ep.Project(ctx, []eventstore.QueryFromSnapshot{
 			eventstore.QueryFromSnapshot{
 				AggregateId:       a.aggregateId,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
-	"github.com/go-ocf/kit/log"
 )
 
 const eventCName = "events"
@@ -31,10 +31,13 @@ var eventsQueryIndex = []string{versionKey, aggregateIdKey, groupIdKey}
 var eventsQueryGroupIdIndex = []string{versionKey, groupIdKey}
 var eventsQueryAggregateIdIndex = []string{versionKey, aggregateIdKey}
 
+type LogDebugfFunc func(fmt string, args ...interface{})
+
 // EventStore implements an EventStore for MongoDB.
 type EventStore struct {
 	session         *mgo.Session
 	pool            *ants.Pool
+	LogDebugfFunc   LogDebugfFunc
 	dbPrefix        string
 	colPrefix       string
 	batchSize       int
@@ -43,7 +46,7 @@ type EventStore struct {
 }
 
 // NewEventStore creates a new EventStore.
-func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc) (*EventStore, error) {
+func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
 	session, err := mgo.Dial(url)
 	if err != nil {
 		return nil, fmt.Errorf("could not dial database: %v", err)
@@ -52,16 +55,13 @@ func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, pool *
 	session.SetMode(mgo.Strong, true)
 	session.SetSafe(&mgo.Safe{W: 1})
 
-	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, pool, eventMarshaler, eventUnmarshaler)
+	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, pool, eventMarshaler, eventUnmarshaler, LogDebugfFunc)
 }
 
 // NewEventStoreWithSession creates a new EventStore with a session.
-func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc) (*EventStore, error) {
+func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
 	if session == nil {
 		return nil, errors.New("no database session")
-	}
-	if pool == nil {
-		return nil, errors.New("no goroutine pool")
 	}
 
 	if eventMarshaler == nil {
@@ -83,6 +83,10 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 		batchSize = 128
 	}
 
+	if LogDebugfFunc == nil {
+		LogDebugfFunc = func(fmt string, args ...interface{}) {}
+	}
+
 	s := &EventStore{
 		pool:            pool,
 		session:         session,
@@ -91,6 +95,7 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 		dataMarshaler:   eventMarshaler,
 		dataUnmarshaler: eventUnmarshaler,
 		batchSize:       batchSize,
+		LogDebugfFunc:   LogDebugfFunc,
 	}
 
 	return s, nil
@@ -165,6 +170,11 @@ func ensureIndex(col *mgo.Collection, indexes ...[]string) error {
 
 // Save save events to path.
 func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, events []event.Event) (concurrencyException bool, err error) {
+	s.LogDebugfFunc("mongodb.Evenstore.Save start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Evenstore.Save takes %v", time.Since(t))
+	}()
 	sess := s.session.Copy()
 	defer sess.Close()
 
@@ -206,6 +216,7 @@ func (s *EventStore) SaveSnapshot(ctx context.Context, groupId string, aggregate
 type iterator struct {
 	iter            *mgo.Iter
 	dataUnmarshaler event.UnmarshalerFunc
+	LogDebugfFunc   LogDebugfFunc
 }
 
 func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
@@ -214,7 +225,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	if !i.iter.Next(&event) {
 		return false
 	}
-	log.Debugf("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
+	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
 
 	e.Version = event.Version
 	e.AggregateId = event.AggregateId
@@ -256,15 +267,37 @@ type loader struct {
 	eventHandler event.Handler
 }
 
-func (l *loader) loadEvents(ctx context.Context, queries []eventstore.QueryFromVersion) error {
-	err := l.store.LoadFromVersion(ctx, queries, l.eventHandler)
-	if err != nil {
-		return fmt.Errorf("cannot load events to eventstore model: %v", err)
+func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
+	var query eventstore.QueryFromVersion
+	queries := make([]eventstore.QueryFromVersion, 0, 128)
+	var errors []error
+
+	for iter.Next(ctx, &query) {
+		queries = append(queries, query)
+		if len(queries) >= l.store.batchSize {
+			err := l.store.LoadFromVersion(ctx, queries, l.eventHandler)
+			if err != nil {
+				errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %v", err))
+			}
+			queries = queries[:0]
+		}
 	}
+	if len(errors) > 0 {
+		return fmt.Errorf("loader cannot load events: %v", errors)
+	}
+
+	if iter.Err() != nil {
+		return iter.Err()
+	}
+
+	if len(queries) > 0 {
+		return l.store.LoadFromVersion(ctx, queries, l.eventHandler)
+	}
+
 	return nil
 }
 
-func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
+func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error {
 	var query eventstore.QueryFromVersion
 	queries := make([]eventstore.QueryFromVersion, 0, 128)
 	var wg sync.WaitGroup
@@ -298,7 +331,7 @@ func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
 		return iter.Err()
 	}
 	if len(queries) > 0 {
-		return l.loadEvents(ctx, queries)
+		return l.store.LoadFromVersion(ctx, queries, l.eventHandler)
 	}
 
 	return nil
@@ -306,6 +339,12 @@ func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
 
 // LoadFromVersion loads aggragates events from version.
 func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.QueryFromVersion, eh event.Handler) error {
+	s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion takes %v", time.Since(t))
+	}()
+
 	q, err := queriesFromVersionToMgoQuery(queries)
 	if err != nil {
 		return fmt.Errorf("cannot load events from version: %v", err)
@@ -319,6 +358,7 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.Q
 	i := iterator{
 		iter:            iter,
 		dataUnmarshaler: s.dataUnmarshaler,
+		LogDebugfFunc:   s.LogDebugfFunc,
 	}
 	err = eh.Handle(ctx, &i)
 
@@ -331,6 +371,11 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.Q
 
 // Load loads events from begining.
 func (s *EventStore) LoadFromSnapshot(ctx context.Context, queries []eventstore.QueryFromSnapshot, eventHandler event.Handler) error {
+	s.LogDebugfFunc("mongodb.Evenstore.LoadFromSnapshot start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Evenstore.LoadFromSnapshot takes %v", time.Since(t))
+	}()
 	return s.LoadSnapshotQueries(ctx, queries, &loader{
 		store:        s,
 		eventHandler: eventHandler,
@@ -415,6 +460,11 @@ func makeDBSnapshot(groupId, aggregateId string, version uint64) dbSnapshot {
 }
 
 func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId string, version uint64) error {
+	s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery takes %v", time.Since(t))
+	}()
 	sess := s.session.Copy()
 	defer sess.Close()
 
@@ -489,12 +539,21 @@ func (i *queryIterator) Err() error {
 }
 
 func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.QueryFromSnapshot, qh *loader) error {
+	s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries takes %v", time.Since(t))
+	}()
 	sess := s.session.Copy()
 	defer sess.Close()
 
 	iter := sess.DB(s.DBName()).C(snapshotCName).Find(snapshotQueriesToMgoQuery(queries)).Iter()
-
-	err := qh.QueryHandle(ctx, &queryIterator{iter})
+	var err error
+	if s.pool != nil {
+		err = qh.QueryHandlePool(ctx, &queryIterator{iter})
+	} else {
+		err = qh.QueryHandle(ctx, &queryIterator{iter})
+	}
 	errClose := iter.Close()
 	if err == nil {
 		return errClose

@@ -74,7 +74,7 @@ func TestProjection(t *testing.T) {
 			return p.Unmarshal(b)
 		}
 		return fmt.Errorf("marshal is not supported by %T", v)
-	})
+	}, nil)
 	/*bson.Marshal, bson.Unmarshal*/
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
@@ -149,7 +149,7 @@ func TestProjection(t *testing.T) {
 
 	a1, err := NewAggregate(path1.GroupId, path1.AggregateId, 1, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
-	})
+	}, nil)
 	assert.NoError(t, err)
 
 	evs, err := a1.HandleCommand(ctx, commandPub1)
@@ -163,14 +163,14 @@ func TestProjection(t *testing.T) {
 
 	a2, err := NewAggregate(path2.GroupId, path2.AggregateId, 1, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
-	})
+	}, nil)
 	assert.NoError(t, err)
 
 	evs, err = a2.HandleCommand(ctx, commandPub2)
 	assert.NoError(t, err)
 	assert.NotNil(t, evs)
 
-	projection, err := NewProjection(ctx, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
+	projection, err := NewProjection(ctx, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil }, nil)
 	assert.NoError(t, err)
 
 	err = projection.Project(ctx, []eventstore.QueryFromSnapshot{
@@ -200,7 +200,7 @@ func TestProjection(t *testing.T) {
 
 	a3, err := NewAggregate(path3.GroupId, path3.AggregateId, 1, numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
-	})
+	}, nil)
 	assert.NoError(t, err)
 
 	evs, err = a3.HandleCommand(ctx, commandPub3)

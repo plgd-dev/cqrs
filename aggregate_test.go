@@ -249,9 +249,7 @@ func TestAggregate(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	pool, err := ants.NewPool(16)
-	assert.NoError(t, err)
-	defer pool.Release()
+	var pool *ants.Pool
 
 	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 128, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
@@ -263,7 +261,7 @@ func TestAggregate(t *testing.T) {
 			return p.Unmarshal(b)
 		}
 		return fmt.Errorf("marshal is not supported by %T", v)
-	})
+	}, nil)
 	/*bson.Marshal, bson.Unmarshal*/
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
@@ -320,7 +318,7 @@ func TestAggregate(t *testing.T) {
 	newAggragate := func() *Aggregate {
 		a, err := NewAggregate(path.GroupId, path.AggregateId, 1, 128, store, func(context.Context) (AggregateModel, error) {
 			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
-		})
+		}, nil)
 		assert.NoError(t, err)
 		return a
 	}
@@ -366,7 +364,7 @@ func TestAggregate(t *testing.T) {
 	assert.NotNil(t, events)
 
 	handler := &mockEventHandler{}
-	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil })
+	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil }, nil)
 
 	err = p.Project(ctx, []eventstore.QueryFromSnapshot{
 		eventstore.QueryFromSnapshot{

@@ -25,7 +25,7 @@ func TestEventStore(t *testing.T) {
 	assert.NoError(t, err)
 	defer pool.Release()
 
-	store, err := NewEventStore(url, "test_mongodb", "events", 1, pool, bson.Marshal, bson.Unmarshal)
+	store, err := NewEventStore(url, "test_mongodb", "events", 1, pool, bson.Marshal, bson.Unmarshal, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
