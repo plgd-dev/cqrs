@@ -239,10 +239,6 @@ type ProtobufUnmarshaler interface {
 	Unmarshal([]byte) error
 }
 
-func RetryPolicy() (time.Time, error) {
-	return time.Now(), errors.New("dont retry")
-}
-
 func testNewEventstore(t *testing.T) *mongodb.EventStore {
 	// Local Mongo testing with Docker
 	url := os.Getenv("MONGO_HOST")
@@ -323,7 +319,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	newAggragate := func() *Aggregate {
-		a, err := NewAggregate(path.GroupId, path.AggregateId, RetryPolicy, 128, store, func(context.Context) (AggregateModel, error) {
+		a, err := NewAggregate(path.GroupId, path.AggregateId, NewDefaultRetryFunc(1), 128, store, func(context.Context) (AggregateModel, error) {
 			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 		}, nil)
 		assert.NoError(t, err)

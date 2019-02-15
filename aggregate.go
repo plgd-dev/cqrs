@@ -24,6 +24,18 @@ type AggregateModel interface {
 // RetryFunc defines policy to repeat HandleCommand on concurrency exception.
 type RetryFunc func() (when time.Time, err error)
 
+// NewDefaultRetryFunc default retry function
+func NewDefaultRetryFunc(limit int) RetryFunc {
+	counter := 0
+	return func() (time.Time, error) {
+		if counter >= limit {
+			return time.Time{}, fmt.Errorf("retry reach limit")
+		}
+		counter++
+		return time.Now().Add(time.Millisecond * 10), nil
+	}
+}
+
 // FactoryModelFunc creates model for aggregate
 type FactoryModelFunc func(ctx context.Context) (AggregateModel, error)
 
