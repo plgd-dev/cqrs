@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/panjf2000/ants"
+
 	"github.com/globalsign/mgo/bson"
 	"github.com/go-ocf/cqrs/eventstore/test"
 	"github.com/stretchr/testify/assert"
@@ -19,7 +21,11 @@ func TestEventStore(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := NewEventStore(url, "test_mongodb", "events", bson.Marshal, bson.Unmarshal)
+	pool, err := ants.NewPool(16)
+	assert.NoError(t, err)
+	defer pool.Release()
+
+	store, err := NewEventStore(url, "test_mongodb", "events", 1, pool, bson.Marshal, bson.Unmarshal, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 

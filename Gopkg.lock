@@ -74,15 +74,15 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:b5da437e8eb9351a243733dffc8709be6c930b67994e47a2f07971bea4db05f2"
+  digest = "1:b03f6307bbedd9da1f3c1cd479f6c6110123a42972fd8c0d8dcbd1a1c0fcb371"
   name = "github.com/go-ocf/kit"
   packages = ["http"]
   pruneopts = "UT"
-  revision = "dd56d824b49746ff155934bb988101a3e5b3b8be"
+  revision = "bb178c5d86d17c8ec5795432c1c6958c12ab4451"
 
 [[projects]]
   branch = "master"
-  digest = "1:d94c7461c25d80d26faa3189e13a97777b770af0b7d91dc8b8d5e198a7b0c388"
+  digest = "1:fceeeafa66fb3be75ac38678cb644c1194ba4620d23e0f25a0f5e987c468d6b7"
   name = "github.com/go-ocf/resource-aggregate"
   packages = [
     "protobuf",
@@ -90,7 +90,7 @@
     "protobuf/events",
   ]
   pruneopts = "UT"
-  revision = "1e995ad9b46dc8e4e6fa62dc92b02792e4902280"
+  revision = "177a36d770956fb49da9a1de699346b2fec64c08"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
@@ -141,15 +141,23 @@
   version = "v1.2.0"
 
 [[projects]]
-  digest = "1:e39a5ee8fcbec487f8fc68863ef95f2b025e0739b0e4aa55558a2b4cf8f0ecf0"
+  digest = "1:866293801cc31b1feb9d2afa9a33cc4506caf74ecb76f481c23a325f2ca50977"
+  name = "github.com/panjf2000/ants"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6cf3ef96e66993822a7f62e555bee5a74ca29c16"
+  version = "v4.0.1"
+
+[[projects]]
+  digest = "1:c7a5e79396b6eb570159df7a1d487ce5775bf43b7907976fbef6de544ea160ad"
   name = "github.com/pierrec/lz4"
   packages = [
     ".",
     "internal/xxh32",
   ]
   pruneopts = "UT"
-  revision = "635575b42742856941dbc767b44905bb9ba083f6"
-  version = "v2.0.7"
+  revision = "473cd7ce01a1113208073166464b98819526150e"
+  version = "v2.0.8"
 
 [[projects]]
   digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
@@ -211,6 +219,7 @@
     "github.com/gofrs/uuid",
     "github.com/gogo/protobuf/gogoproto",
     "github.com/gogo/protobuf/proto",
+    "github.com/panjf2000/ants",
     "github.com/stretchr/testify/assert",
   ]
   solver-name = "gps-cdcl"

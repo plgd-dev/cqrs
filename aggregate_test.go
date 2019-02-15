@@ -8,15 +8,14 @@ import (
 	"testing"
 	"time"
 
-	resources "github.com/go-ocf/resource-aggregate/protobuf"
-	"github.com/go-ocf/resource-aggregate/protobuf/commands"
-
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	protoEvent "github.com/go-ocf/cqrs/protobuf/event"
 	"github.com/go-ocf/kit/http"
+	resources "github.com/go-ocf/resource-aggregate/protobuf"
+	"github.com/go-ocf/resource-aggregate/protobuf/commands"
 	"github.com/go-ocf/resource-aggregate/protobuf/events"
+	"github.com/panjf2000/ants"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -102,38 +101,41 @@ func (rs *ResourceStateSnapshotTaken) HandleEventResourcePublished(ctx context.C
 
 func (rs *ResourceStateSnapshotTaken) HandleEventResourceUnpublished(ctx context.Context, pub ResourceUnpublished) error {
 	if !rs.IsPublished {
-		return fmt.Errorf("already published")
+		return fmt.Errorf("already unpublished")
 	}
 	rs.IsPublished = false
 	return nil
 }
 
-func (rs *ResourceStateSnapshotTaken) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+func (rs *ResourceStateSnapshotTaken) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
-	for iter.Next(&eu) {
+	for iter.Next(ctx, &eu) {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}
 		switch eu.EventType {
 		case http.ProtobufContentType(&events.ResourceStateSnapshotTaken{}):
-			var s ResourceStateSnapshotTaken
+			var s events.ResourceStateSnapshotTaken
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
-			*rs = s
-			return nil
+			rs.ResourceStateSnapshotTaken = s
 		case http.ProtobufContentType(&events.ResourcePublished{}):
 			var s ResourcePublished
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
-			return rs.HandleEventResourcePublished(ctx, s)
+			if err := rs.HandleEventResourcePublished(ctx, s); err != nil {
+				return err
+			}
 		case http.ProtobufContentType(&events.ResourceUnpublished{}):
 			var s ResourceUnpublished
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
-			return rs.HandleEventResourceUnpublished(ctx, s)
+			if err := rs.HandleEventResourceUnpublished(ctx, s); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -194,7 +196,7 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 		}}
 		err := rs.HandleEventResourceUnpublished(ctx, ru)
 		if err != nil {
-			return nil, fmt.Errorf("cannot handle resource publish: %v", err)
+			return nil, fmt.Errorf("cannot handle resource unpublish: %v", err)
 		}
 		return []event.Event{ru}, nil
 	}
@@ -204,26 +206,18 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 
 func (rs *ResourceStateSnapshotTaken) SnapshotEventType() string { return rs.EventType() }
 
-func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event, error) {
+func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event, bool) {
 	rs.EventMetadata.Version = version
-	return rs, nil
+	return rs, true
 }
 
 type mockEventHandler struct {
 	events []event.EventUnmarshaler
 }
 
-func (eh *mockEventHandler) BeforeLoadingEventsFromEventstore(ctx context.Context, path protoEvent.Path) {
-
-}
-
-func (eh *mockEventHandler) AfterLoadingEventsFromEventstore(ctx context.Context, path protoEvent.Path) {
-
-}
-
-func (eh *mockEventHandler) HandleEvent(ctx context.Context, path protoEvent.Path, iter event.Iter) error {
+func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
 	var eu event.EventUnmarshaler
-	for iter.Next(&eu) {
+	for iter.Next(ctx, &eu) {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}
@@ -245,7 +239,7 @@ type ProtobufUnmarshaler interface {
 	Unmarshal([]byte) error
 }
 
-func TestAggregate(t *testing.T) {
+func testNewEventstore(t *testing.T) *mongodb.EventStore {
 	// Local Mongo testing with Docker
 	url := os.Getenv("MONGO_HOST")
 
@@ -254,7 +248,9 @@ func TestAggregate(t *testing.T) {
 		url = "localhost:27017"
 	}
 
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", func(v interface{}) ([]byte, error) {
+	var pool *ants.Pool
+
+	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 128, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -264,22 +260,36 @@ func TestAggregate(t *testing.T) {
 			return p.Unmarshal(b)
 		}
 		return fmt.Errorf("marshal is not supported by %T", v)
-	})
+	}, nil)
 	/*bson.Marshal, bson.Unmarshal*/
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
-	ctx := context.Background()
+	return store
+}
 
+func TestAggregate(t *testing.T) {
+	store := testNewEventstore(t)
+	ctx := context.Background()
 	defer store.Close()
 	defer func() {
-		err = store.Clear(ctx)
+		err := store.Clear(ctx)
 		assert.NoError(t, err)
 	}()
 
-	path := protoEvent.Path{
-		Path:        []string{"1", "2", "3", "4"},
-		AggregateId: "ID2",
+	type Path struct {
+		GroupId     string
+		AggregateId string
+	}
+
+	path := Path{
+		GroupId:     "1",
+		AggregateId: "ID0",
+	}
+
+	path1 := Path{
+		GroupId:     "1",
+		AggregateId: "ID1",
 	}
 
 	commandPub := commands.PublishResourceRequest{
@@ -295,42 +305,145 @@ func TestAggregate(t *testing.T) {
 		AuthorizationContext: &commands.AuthorizationContext{},
 	}
 
-	a, err := NewAggregate(path, store, 1, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
-	})
-	assert.NoError(t, err)
+	commandPub1 := commands.PublishResourceRequest{
+		ResourceId: path1.AggregateId,
+		Resource: &resources.Resource{
+			Id: path1.AggregateId,
+		},
+		AuthorizationContext: &commands.AuthorizationContext{},
+	}
 
+	commandUnpub1 := commands.UnpublishResourceRequest{
+		ResourceId:           path1.AggregateId,
+		AuthorizationContext: &commands.AuthorizationContext{},
+	}
+
+	newAggragate := func() *Aggregate {
+		a, err := NewAggregate(path.GroupId, path.AggregateId, NewDefaultRetryFunc(1), 128, store, func(context.Context) (AggregateModel, error) {
+			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		}, nil)
+		assert.NoError(t, err)
+		return a
+	}
+
+	a := newAggragate()
 	events, err := a.HandleCommand(ctx, commandPub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandPub)
+	b := newAggragate()
+	events, err = b.HandleCommand(ctx, commandPub)
 	assert.Error(t, err)
 	assert.Nil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandUnpub)
+	c := newAggragate()
+	events, err = c.HandleCommand(ctx, commandUnpub)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandUnpub)
+	d := newAggragate()
+	events, err = d.HandleCommand(ctx, commandUnpub)
 	assert.Error(t, err)
 	assert.Nil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandPub)
+	e := newAggragate()
+	events, err = e.HandleCommand(ctx, commandPub1)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	events, err = a.HandleCommand(ctx, commandUnpub)
+	f := newAggragate()
+	events, err = f.HandleCommand(ctx, commandUnpub1)
 	assert.NoError(t, err)
 	assert.NotNil(t, events)
 
-	p := eventstore.MakeProjection(path, 1, store, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil })
-
-	_, numEvents, lastVersion, err := p.Project(ctx)
+	g := newAggragate()
+	events, err = g.HandleCommand(ctx, commandPub)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, numEvents)
-	assert.Equal(t, uint64(6), lastVersion)
+	assert.NotNil(t, events)
+
+	h := newAggragate()
+	events, err = h.HandleCommand(ctx, commandUnpub)
+	assert.NoError(t, err)
+	assert.NotNil(t, events)
+
+	handler := &mockEventHandler{}
+	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil }, nil)
+
+	err = p.Project(ctx, []eventstore.QueryFromSnapshot{
+		eventstore.QueryFromSnapshot{
+			GroupId:           path.GroupId,
+			AggregateId:       path.AggregateId,
+			SnapshotEventType: handler.SnapshotEventType(),
+		},
+	})
+	assert.NoError(t, err)
 
 	//assert.Equal(t, nil, model.(*mockEventHandler).events)
 
+	concurrencyExcepTestA := newAggragate()
+	model, err := concurrencyExcepTestA.factoryModel(ctx)
+	assert.NoError(t, err)
+
+	amodel, err := newAggrModel(ctx, a.store, a.LogDebugfFunc, model, a.aggregateId, a.groupId)
+	assert.NoError(t, err)
+
+	events, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)
+	assert.NoError(t, err)
+	assert.False(t, concurrencyException)
+	assert.NotNil(t, events)
+
+	events, concurrencyException, err = a.handleCommandWithAggrModel(ctx, commandUnpub, amodel)
+	assert.NoError(t, nil)
+	assert.True(t, concurrencyException)
+	assert.Nil(t, events)
+}
+
+func canceledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func Test_handleRetry(t *testing.T) {
+	type args struct {
+		ctx       context.Context
+		retryFunc RetryFunc
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "ok",
+			args: args{
+				ctx:       context.Background(),
+				retryFunc: func() (time.Time, error) { return time.Now(), nil },
+			},
+			wantErr: false,
+		},
+		{
+			name: "err",
+			args: args{
+				ctx:       context.Background(),
+				retryFunc: func() (time.Time, error) { return time.Now().Add(time.Second), errors.New("error") },
+			},
+			wantErr: true,
+		},
+		{
+			name: "canceled",
+			args: args{
+				ctx:       canceledContext(),
+				retryFunc: func() (time.Time, error) { return time.Now().Add(time.Second), nil },
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := handleRetry(tt.args.ctx, tt.args.retryFunc); (err != nil) != tt.wantErr {
+				t.Errorf("handleRetry() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
 }
