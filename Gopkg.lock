@@ -78,7 +78,7 @@
   name = "github.com/go-ocf/kit"
   packages = ["http"]
   pruneopts = "UT"
-  revision = "ca9f62125e2c092b695b43f05238bb783836772c"
+  revision = "bb178c5d86d17c8ec5795432c1c6958c12ab4451"
 
 [[projects]]
   branch = "master"

@@ -108,7 +108,7 @@ func (s *EventStore) saveEvent(col *mgo.Collection, groupId string, aggregateId 
 	}
 	if err := col.Insert(e); err != nil {
 		if mgo.IsDup(err) {
-			return true, fmt.Errorf("cannot save events - concurrency exception: %v", err)
+			return true, nil
 		}
 		return false, fmt.Errorf("cannot save events: %v", err)
 	}
@@ -148,7 +148,7 @@ func (s *EventStore) saveEvents(col *mgo.Collection, groupId, aggregateId string
 	err = runner.Run(ops, "", nil)
 
 	if err != nil {
-		return true, fmt.Errorf("cannot save events: %v", err)
+		return true, nil
 	}
 	return false, err
 }

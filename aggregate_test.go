@@ -8,15 +8,14 @@ import (
 	"testing"
 	"time"
 
-	resources "github.com/go-ocf/resource-aggregate/protobuf"
-	"github.com/go-ocf/resource-aggregate/protobuf/commands"
-	"github.com/panjf2000/ants"
-
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	"github.com/go-ocf/kit/http"
+	resources "github.com/go-ocf/resource-aggregate/protobuf"
+	"github.com/go-ocf/resource-aggregate/protobuf/commands"
 	"github.com/go-ocf/resource-aggregate/protobuf/events"
+	"github.com/panjf2000/ants"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -207,9 +206,9 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 
 func (rs *ResourceStateSnapshotTaken) SnapshotEventType() string { return rs.EventType() }
 
-func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event, error) {
+func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event, bool) {
 	rs.EventMetadata.Version = version
-	return rs, nil
+	return rs, true
 }
 
 type mockEventHandler struct {
@@ -240,7 +239,11 @@ type ProtobufUnmarshaler interface {
 	Unmarshal([]byte) error
 }
 
-func TestAggregate(t *testing.T) {
+func RetryPolicy() (time.Time, error) {
+	return time.Now(), errors.New("dont retry")
+}
+
+func testNewEventstore(t *testing.T) *mongodb.EventStore {
 	// Local Mongo testing with Docker
 	url := os.Getenv("MONGO_HOST")
 
@@ -266,11 +269,15 @@ func TestAggregate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
-	ctx := context.Background()
+	return store
+}
 
+func TestAggregate(t *testing.T) {
+	store := testNewEventstore(t)
+	ctx := context.Background()
 	defer store.Close()
 	defer func() {
-		err = store.Clear(ctx)
+		err := store.Clear(ctx)
 		assert.NoError(t, err)
 	}()
 
@@ -316,7 +323,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	newAggragate := func() *Aggregate {
-		a, err := NewAggregate(path.GroupId, path.AggregateId, 1, 128, store, func(context.Context) (AggregateModel, error) {
+		a, err := NewAggregate(path.GroupId, path.AggregateId, RetryPolicy, 128, store, func(context.Context) (AggregateModel, error) {
 			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
 		}, nil)
 		assert.NoError(t, err)
@@ -377,4 +384,70 @@ func TestAggregate(t *testing.T) {
 
 	//assert.Equal(t, nil, model.(*mockEventHandler).events)
 
+	concurrencyExcepTestA := newAggragate()
+	model, err := concurrencyExcepTestA.factoryModel(ctx)
+	assert.NoError(t, err)
+
+	amodel, err := newAggrModel(ctx, a.store, a.LogDebugfFunc, model, a.aggregateId, a.groupId)
+	assert.NoError(t, err)
+
+	events, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)
+	assert.NoError(t, err)
+	assert.False(t, concurrencyException)
+	assert.NotNil(t, events)
+
+	events, concurrencyException, err = a.handleCommandWithAggrModel(ctx, commandUnpub, amodel)
+	assert.NoError(t, nil)
+	assert.True(t, concurrencyException)
+	assert.Nil(t, events)
+}
+
+func canceledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func Test_handleRetry(t *testing.T) {
+	type args struct {
+		ctx       context.Context
+		retryFunc RetryFunc
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "ok",
+			args: args{
+				ctx:       context.Background(),
+				retryFunc: func() (time.Time, error) { return time.Now(), nil },
+			},
+			wantErr: false,
+		},
+		{
+			name: "err",
+			args: args{
+				ctx:       context.Background(),
+				retryFunc: func() (time.Time, error) { return time.Now().Add(time.Second), errors.New("error") },
+			},
+			wantErr: true,
+		},
+		{
+			name: "canceled",
+			args: args{
+				ctx:       canceledContext(),
+				retryFunc: func() (time.Time, error) { return time.Now().Add(time.Second), nil },
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := handleRetry(tt.args.ctx, tt.args.retryFunc); (err != nil) != tt.wantErr {
+				t.Errorf("handleRetry() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
 }

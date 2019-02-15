@@ -160,7 +160,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 		eventsToSave[1],
 	})
 	assert.True(t, conExcep)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 
 	t.Log("save event, VersionI 2")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{

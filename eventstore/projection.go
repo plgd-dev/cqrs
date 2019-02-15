@@ -16,6 +16,8 @@ type Model interface {
 
 // FactoryModelFunc creates user model.
 type FactoryModelFunc func(ctx context.Context) (Model, error)
+
+// LogDebugfFunc log debug messages
 type LogDebugfFunc func(fmt string, args ...interface{})
 
 type aggregateModel struct {
@@ -224,7 +226,7 @@ func (p *Projection) Handle(ctx context.Context, iter event.Iter) error {
 	return err
 }
 
-// Handle update projection by events.
+// HandleWithReload update projection by events and reload events if it is needed.
 func (p *Projection) HandleWithReload(ctx context.Context, iter event.Iter) error {
 	//reload queries for db because version of events was greater > lastVersionSeen+1
 	reloadQueries, err := p.handle(ctx, iter)
