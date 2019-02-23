@@ -242,16 +242,16 @@ func (i *iterator) Err() error {
 	return i.iter.Err()
 }
 
-func queriesFromVersionToMgoQuery(queries []eventstore.QueryFromVersion) (bson.M, error) {
+func queriesFromVersionToMgoQuery(queries []eventstore.VersionQuery) (bson.M, error) {
 	orQueries := make([]bson.M, 0, 32)
 
 	if len(queries) == 0 {
-		return bson.M{}, fmt.Errorf("empty []eventstore.QueryFromVersion")
+		return bson.M{}, fmt.Errorf("empty []eventstore.VersionQuery")
 	}
 
 	for _, q := range queries {
 		if q.AggregateId == "" {
-			return bson.M{}, fmt.Errorf("invalid QueryFromVersion.AggregateId")
+			return bson.M{}, fmt.Errorf("invalid VersionQuery.AggregateId")
 		}
 		andQueries := make([]bson.M, 0, 2)
 		andQueries = append(andQueries, bson.M{versionKey: bson.M{"$gte": q.Version}})
@@ -268,8 +268,8 @@ type loader struct {
 }
 
 func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
-	var query eventstore.QueryFromVersion
-	queries := make([]eventstore.QueryFromVersion, 0, 128)
+	var query eventstore.VersionQuery
+	queries := make([]eventstore.VersionQuery, 0, 128)
 	var errors []error
 
 	for iter.Next(ctx, &query) {
@@ -298,8 +298,8 @@ func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
 }
 
 func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error {
-	var query eventstore.QueryFromVersion
-	queries := make([]eventstore.QueryFromVersion, 0, 128)
+	var query eventstore.VersionQuery
+	queries := make([]eventstore.VersionQuery, 0, 128)
 	var wg sync.WaitGroup
 
 	var errors []error
@@ -319,7 +319,7 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 					errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %v", err))
 				}
 			})
-			queries = make([]eventstore.QueryFromVersion, 0, 128)
+			queries = make([]eventstore.VersionQuery, 0, 128)
 		}
 	}
 	wg.Wait()
@@ -338,7 +338,7 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 }
 
 // LoadFromVersion loads aggragates events from version.
-func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.QueryFromVersion, eh event.Handler) error {
+func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler) error {
 	s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion start")
 	t := time.Now()
 	defer func() {
@@ -370,7 +370,7 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.Q
 }
 
 // Load loads events from begining.
-func (s *EventStore) LoadFromSnapshot(ctx context.Context, queries []eventstore.QueryFromSnapshot, eventHandler event.Handler) error {
+func (s *EventStore) LoadFromSnapshot(ctx context.Context, queries []eventstore.SnapshotQuery, eventHandler event.Handler) error {
 	s.LogDebugfFunc("mongodb.Evenstore.LoadFromSnapshot start")
 	t := time.Now()
 	defer func() {
@@ -498,7 +498,7 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 	return nil
 }
 
-func snapshotQueriesToMgoQuery(queries []eventstore.QueryFromSnapshot) bson.M {
+func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {
 	orQueries := make([]bson.M, 0, 32)
 
 	for _, q := range queries {
@@ -506,7 +506,7 @@ func snapshotQueriesToMgoQuery(queries []eventstore.QueryFromSnapshot) bson.M {
 		if q.AggregateId != "" {
 			andQueries = append(andQueries, bson.M{aggregateIdKey: q.AggregateId})
 		}
-		if q.GroupId != "" {
+		if q.AggregateId == "" && q.GroupId != "" {
 			andQueries = append(andQueries, bson.M{groupIdKey: q.GroupId})
 		}
 		orQueries = append(orQueries, bson.M{"$and": andQueries})
@@ -522,7 +522,7 @@ type queryIterator struct {
 	iter *mgo.Iter
 }
 
-func (i *queryIterator) Next(ctx context.Context, q *eventstore.QueryFromVersion) bool {
+func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bool {
 	var query dbSnapshot
 
 	if !i.iter.Next(&query) {
@@ -538,7 +538,7 @@ func (i *queryIterator) Err() error {
 	return i.iter.Err()
 }
 
-func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.QueryFromSnapshot, qh *loader) error {
+func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.SnapshotQuery, qh *loader) error {
 	s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries start")
 	t := time.Now()
 	defer func() {

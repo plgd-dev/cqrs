@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	kitCqrsProto "github.com/go-ocf/kit/cqrs/protobuf"
 	resources "github.com/go-ocf/resource-aggregate/protobuf"
 	"github.com/go-ocf/resource-aggregate/protobuf/commands"
 	"github.com/gofrs/uuid"
@@ -112,7 +113,7 @@ func TestProjection(t *testing.T) {
 		Resource: &resources.Resource{
 			Id: path1.AggregateId,
 		},
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandPub2 := commands.PublishResourceRequest{
@@ -120,7 +121,7 @@ func TestProjection(t *testing.T) {
 		Resource: &resources.Resource{
 			Id: path2.AggregateId,
 		},
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandPub3 := commands.PublishResourceRequest{
@@ -128,17 +129,17 @@ func TestProjection(t *testing.T) {
 		Resource: &resources.Resource{
 			Id: path3.AggregateId,
 		},
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandUnpub1 := commands.UnpublishResourceRequest{
 		ResourceId:           path1.AggregateId,
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandUnpub3 := commands.UnpublishResourceRequest{
 		ResourceId:           path3.AggregateId,
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	/*
@@ -147,8 +148,8 @@ func TestProjection(t *testing.T) {
 		}
 	*/
 
-	a1, err := NewAggregate(path1.GroupId, path1.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
+	a1, err := NewAggregate(path1.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
 	}, nil)
 	assert.NoError(t, err)
 
@@ -161,8 +162,8 @@ func TestProjection(t *testing.T) {
 		return s.SnapshotEventType()
 	}
 
-	a2, err := NewAggregate(path2.GroupId, path2.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
+	a2, err := NewAggregate(path2.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
 	}, nil)
 	assert.NoError(t, err)
 
@@ -173,8 +174,8 @@ func TestProjection(t *testing.T) {
 	projection, err := NewProjection(ctx, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil }, nil)
 	assert.NoError(t, err)
 
-	err = projection.Project(ctx, []eventstore.QueryFromSnapshot{
-		eventstore.QueryFromSnapshot{
+	err = projection.Project(ctx, []eventstore.SnapshotQuery{
+		eventstore.SnapshotQuery{
 			GroupId:           path1.GroupId,
 			AggregateId:       path1.AggregateId,
 			SnapshotEventType: snapshotEventType(),
@@ -183,8 +184,8 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(projection.Models(nil)))
 
-	err = projection.Project(ctx, []eventstore.QueryFromSnapshot{
-		eventstore.QueryFromSnapshot{
+	err = projection.Project(ctx, []eventstore.SnapshotQuery{
+		eventstore.SnapshotQuery{
 			GroupId:           path2.GroupId,
 			AggregateId:       path2.AggregateId,
 			SnapshotEventType: snapshotEventType(),
@@ -198,8 +199,8 @@ func TestProjection(t *testing.T) {
 
 	time.Sleep(waitForSubscription)
 
-	a3, err := NewAggregate(path3.GroupId, path3.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
+	a3, err := NewAggregate(path3.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
+		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
 	}, nil)
 	assert.NoError(t, err)
 
@@ -226,8 +227,8 @@ func TestProjection(t *testing.T) {
 
 	time.Sleep(waitForSubscription)
 
-	err = projection.Forget([]eventstore.QueryFromSnapshot{
-		eventstore.QueryFromSnapshot{
+	err = projection.Forget([]eventstore.SnapshotQuery{
+		eventstore.SnapshotQuery{
 			GroupId:           path3.GroupId,
 			AggregateId:       path3.AggregateId,
 			SnapshotEventType: snapshotEventType(),

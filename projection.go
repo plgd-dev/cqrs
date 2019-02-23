@@ -46,12 +46,12 @@ func NewProjection(ctx context.Context, store eventstore.EventStore, subscriptio
 }
 
 // Project load events from aggregates that below to path.
-func (p *Projection) Project(ctx context.Context, query []eventstore.QueryFromSnapshot) error {
+func (p *Projection) Project(ctx context.Context, query []eventstore.SnapshotQuery) error {
 	return p.projection.Project(ctx, query)
 }
 
 // Forget projection for certain query.
-func (p *Projection) Forget(query []eventstore.QueryFromSnapshot) error {
+func (p *Projection) Forget(query []eventstore.SnapshotQuery) error {
 	return p.projection.Forget(query)
 }
 
@@ -84,7 +84,7 @@ func (p *Projection) SubscribeTo(topics []string) error {
 }
 
 // Models get models from projection
-func (p *Projection) Models(queries []eventstore.QueryFromSnapshot) []eventstore.Model {
+func (p *Projection) Models(queries []eventstore.SnapshotQuery) []eventstore.Model {
 	return p.projection.Models(queries)
 }
 

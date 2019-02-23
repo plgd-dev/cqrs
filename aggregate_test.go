@@ -11,6 +11,7 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
+	kitCqrsProto "github.com/go-ocf/kit/cqrs/protobuf"
 	"github.com/go-ocf/kit/http"
 	resources "github.com/go-ocf/resource-aggregate/protobuf"
 	"github.com/go-ocf/resource-aggregate/protobuf/commands"
@@ -150,15 +151,15 @@ func TimeNowMs() uint64 {
 }
 
 //CreateEventMeta for creating EventMetadata from ResourcefModel
-func CreateEventMeta(newVersion uint64) resources.EventMetadata {
-	return resources.EventMetadata{
+func CreateEventMeta(newVersion uint64) kitCqrsProto.EventMetadata {
+	return kitCqrsProto.EventMetadata{
 		Version:     newVersion,
 		TimestampMs: TimeNowMs(),
 	}
 }
 
-func CreateAuditContext(a *commands.AuthorizationContext, correlationId string) resources.AuditContext {
-	return resources.AuditContext{
+func CreateAuditContext(a *kitCqrsProto.AuthorizationContext, correlationId string) kitCqrsProto.AuditContext {
+	return kitCqrsProto.AuditContext{
 		UserId:        a.UserId,
 		DeviceId:      a.DeviceId,
 		CorrelationId: correlationId,
@@ -205,6 +206,10 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 }
 
 func (rs *ResourceStateSnapshotTaken) SnapshotEventType() string { return rs.EventType() }
+
+func (rs *ResourceStateSnapshotTaken) GroupId() string {
+	return rs.Resource.DeviceId
+}
 
 func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event, bool) {
 	rs.EventMetadata.Version = version
@@ -297,12 +302,12 @@ func TestAggregate(t *testing.T) {
 		Resource: &resources.Resource{
 			Id: path.AggregateId,
 		},
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandUnpub := commands.UnpublishResourceRequest{
 		ResourceId:           path.AggregateId,
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandPub1 := commands.PublishResourceRequest{
@@ -310,17 +315,17 @@ func TestAggregate(t *testing.T) {
 		Resource: &resources.Resource{
 			Id: path1.AggregateId,
 		},
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	commandUnpub1 := commands.UnpublishResourceRequest{
 		ResourceId:           path1.AggregateId,
-		AuthorizationContext: &commands.AuthorizationContext{},
+		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
 	}
 
 	newAggragate := func() *Aggregate {
-		a, err := NewAggregate(path.GroupId, path.AggregateId, NewDefaultRetryFunc(1), 128, store, func(context.Context) (AggregateModel, error) {
-			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &resources.EventMetadata{}}}, nil
+		a, err := NewAggregate(path.AggregateId, NewDefaultRetryFunc(1), 128, store, func(context.Context) (AggregateModel, error) {
+			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
 		}, nil)
 		assert.NoError(t, err)
 		return a
@@ -369,8 +374,8 @@ func TestAggregate(t *testing.T) {
 	handler := &mockEventHandler{}
 	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil }, nil)
 
-	err = p.Project(ctx, []eventstore.QueryFromSnapshot{
-		eventstore.QueryFromSnapshot{
+	err = p.Project(ctx, []eventstore.SnapshotQuery{
+		eventstore.SnapshotQuery{
 			GroupId:           path.GroupId,
 			AggregateId:       path.AggregateId,
 			SnapshotEventType: handler.SnapshotEventType(),
@@ -384,7 +389,7 @@ func TestAggregate(t *testing.T) {
 	model, err := concurrencyExcepTestA.factoryModel(ctx)
 	assert.NoError(t, err)
 
-	amodel, err := newAggrModel(ctx, a.store, a.LogDebugfFunc, model, a.aggregateId, a.groupId)
+	amodel, err := newAggrModel(ctx, a.aggregateId, a.store, a.LogDebugfFunc, model)
 	assert.NoError(t, err)
 
 	events, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)
