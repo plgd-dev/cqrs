@@ -74,15 +74,18 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:b03f6307bbedd9da1f3c1cd479f6c6110123a42972fd8c0d8dcbd1a1c0fcb371"
+  digest = "1:0cfba2341540b1e077c13019f1b375469e45d6e15628485eef477824386f4ff1"
   name = "github.com/go-ocf/kit"
-  packages = ["http"]
+  packages = [
+    "cqrs/protobuf",
+    "http",
+  ]
   pruneopts = "UT"
-  revision = "bb178c5d86d17c8ec5795432c1c6958c12ab4451"
+  revision = "968df3c8ad96cf8f9e5baf72526b26bd8a9112bf"
 
 [[projects]]
   branch = "master"
-  digest = "1:fceeeafa66fb3be75ac38678cb644c1194ba4620d23e0f25a0f5e987c468d6b7"
+  digest = "1:f02e6dc3dc0849feee1bfb7e5c1e8ff0845783f841d62cc482b03184efb53404"
   name = "github.com/go-ocf/resource-aggregate"
   packages = [
     "protobuf",
@@ -90,7 +93,7 @@
     "protobuf/events",
   ]
   pruneopts = "UT"
-  revision = "177a36d770956fb49da9a1de699346b2fec64c08"
+  revision = "2cdb748c93ec54f80522aa7ed2eb1edc6ca8a7e1"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
@@ -101,7 +104,7 @@
   version = "v3.2.0"
 
 [[projects]]
-  digest = "1:a9c85389dbd301c97a3499fe15a2b65b505b5f0cb0f1120dea59f1f3d6b11d96"
+  digest = "1:4652941215f23c7ad6546bab86964c72248a1134baa53f0df618661344ba5cac"
   name = "github.com/gogo/protobuf"
   packages = [
     "gogoproto",
@@ -109,16 +112,16 @@
     "protoc-gen-gogo/descriptor",
   ]
   pruneopts = "UT"
-  revision = "4cbf7e384e768b4e01799441fdf2a706a5635ae7"
-  version = "v1.2.0"
+  revision = "ba06b47c162d49f2af050fb4c75bcbc86a159d5c"
+  version = "v1.2.1"
 
 [[projects]]
-  branch = "master"
-  digest = "1:4a0c6bb4805508a6287675fac876be2ac1182539ca8a32468d8128882e9d5009"
+  digest = "1:e4f5819333ac698d294fe04dbf640f84719658d5c7ce195b10060cc37292ce79"
   name = "github.com/golang/snappy"
   packages = ["."]
   pruneopts = "UT"
-  revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
+  revision = "2a8bb927dd31d8daada140a5d09578521ce5c36a"
+  version = "v0.0.1"
 
 [[projects]]
   digest = "1:aaa8e0e7e35d92e21daed3f241832cee73d15ca1cd3302ba3843159a959a7eac"
@@ -141,23 +144,23 @@
   version = "v1.2.0"
 
 [[projects]]
-  digest = "1:866293801cc31b1feb9d2afa9a33cc4506caf74ecb76f481c23a325f2ca50977"
+  digest = "1:ce33c87d3c813074190a3551912c446a05048dafa436429ba9e467532bc9cdd1"
   name = "github.com/panjf2000/ants"
   packages = ["."]
   pruneopts = "UT"
-  revision = "6cf3ef96e66993822a7f62e555bee5a74ca29c16"
-  version = "v4.0.1"
+  revision = "8bb0cde224fdf3a1c6915b4dbd943bc506b42257"
+  version = "v4.1"
 
 [[projects]]
-  digest = "1:c7a5e79396b6eb570159df7a1d487ce5775bf43b7907976fbef6de544ea160ad"
+  digest = "1:d4c88b5ad20151a96c1e5a55547a944b6af623aa315f69ee0d172b00f95d27fb"
   name = "github.com/pierrec/lz4"
   packages = [
     ".",
     "internal/xxh32",
   ]
   pruneopts = "UT"
-  revision = "473cd7ce01a1113208073166464b98819526150e"
-  version = "v2.0.8"
+  revision = "062282ea0dcff40c9fb8525789eef9644b1fbd6e"
+  version = "v2.1.0"
 
 [[projects]]
   digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
@@ -192,7 +195,8 @@
   version = "v1.0.0"
 
 [[projects]]
-  digest = "1:15ad8a80098fcc7a194b9db6b26d74072a852e4faa957848c8118193d3c69230"
+  branch = "master"
+  digest = "1:d9fff816672fef4dd9db94ce28ca12a650b58c84a1033a2cf543a9e9eec31d77"
   name = "github.com/valyala/fasthttp"
   packages = [
     ".",
@@ -200,8 +204,7 @@
     "stackless",
   ]
   pruneopts = "UT"
-  revision = "e5f51c11919d4f66400334047b897ef0a94c6f3c"
-  version = "v20180529"
+  revision = "ed3793a1e1602989ba50bd20823e8521a4da84af"
 
 [solve-meta]
   analyzer-name = "dep"
@@ -212,6 +215,7 @@
     "github.com/globalsign/mgo",
     "github.com/globalsign/mgo/bson",
     "github.com/globalsign/mgo/txn",
+    "github.com/go-ocf/kit/cqrs/protobuf",
     "github.com/go-ocf/kit/http",
     "github.com/go-ocf/resource-aggregate/protobuf",
     "github.com/go-ocf/resource-aggregate/protobuf/commands",
