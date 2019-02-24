@@ -309,16 +309,27 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 		queries = append(queries, query)
 		if len(queries) >= l.store.batchSize {
 			wg.Add(1)
+			l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:newTask")
 			tmp := queries
-			l.store.pool.Submit(func() {
+			err := l.store.pool.Submit(func() {
 				defer wg.Done()
+				l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:task:LoadFromVersion:start")
 				err := l.store.LoadFromVersion(ctx, tmp, l.eventHandler)
+				l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:task:LoadFromVersion:done")
 				if err != nil {
 					errorsLock.Lock()
 					defer errorsLock.Unlock()
 					errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %v", err))
 				}
+				l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:doneTask")
 			})
+			if err != nil {
+				wg.Done()
+				errorsLock.Lock()
+				errors = append(errors, fmt.Errorf("cannot submit task to load events to eventstore model: %v", err))
+				errorsLock.Unlock()
+				break
+			}
 			queries = make([]eventstore.VersionQuery, 0, 128)
 		}
 	}
