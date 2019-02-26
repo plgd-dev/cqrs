@@ -217,7 +217,7 @@ func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries
 		}
 	}
 
-	return nil, nil
+	return reloadQueries, nil
 }
 
 // Handle update projection by events.
