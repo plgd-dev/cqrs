@@ -190,13 +190,15 @@ func (a *Aggregate) handleCommandWithAggrModel(ctx context.Context, cmd Command,
 		return nil, false, fmt.Errorf("cannot handle command by model: %v", err)
 	}
 
-	concurrencyException, err := a.store.Save(ctx, amodel.GroupId(), a.aggregateId, newEvents)
-	if err != nil {
-		return nil, false, fmt.Errorf("cannot save events: %v", err)
-	}
+	if len(newEvents) > 0 {
+		concurrencyException, err := a.store.Save(ctx, amodel.GroupId(), a.aggregateId, newEvents)
+		if err != nil {
+			return nil, false, fmt.Errorf("cannot save events: %v", err)
+		}
 
-	if concurrencyException {
-		return nil, true, nil
+		if concurrencyException {
+			return nil, true, nil
+		}
 	}
 
 	return append(events, newEvents...), false, nil
