@@ -186,9 +186,12 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 	}
 
 	if events[0].Version() == 0 {
-		err := s.SaveSnapshotQuery(ctx, groupId, aggregateId, 0)
+		concurrencyException, err = s.SaveSnapshotQuery(ctx, groupId, aggregateId, 0)
 		if err != nil {
 			return false, fmt.Errorf("cannot save events without snapshot query for version 0: %v", err)
+		}
+		if concurrencyException {
+			return concurrencyException, nil
 		}
 	}
 
@@ -207,8 +210,8 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 
 func (s *EventStore) SaveSnapshot(ctx context.Context, groupId string, aggregateId string, ev event.Event) (concurrencyException bool, err error) {
 	concurrencyException, err = s.Save(ctx, groupId, aggregateId, []event.Event{ev})
-	if err != nil {
-		return false, s.SaveSnapshotQuery(ctx, groupId, aggregateId, ev.Version())
+	if err == nil {
+		return s.SaveSnapshotQuery(ctx, groupId, aggregateId, ev.Version())
 	}
 	return concurrencyException, err
 }
@@ -455,9 +458,9 @@ func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event
 
 type dbSnapshot struct {
 	Id          string `bson:"_id"`
-	GroupId     string `bson:groupIdKey`
-	AggregateId string `bson:aggregateIdKey`
-	Version     uint64 `bson:versionKey`
+	GroupId     string `bson:groupid`
+	AggregateId string `bson:aggregateid`
+	Version     uint64 `bson:version`
 }
 
 // newDBEvent returns a new dbEvent for an event.
@@ -470,7 +473,7 @@ func makeDBSnapshot(groupId, aggregateId string, version uint64) dbSnapshot {
 	}
 }
 
-func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId string, version uint64) error {
+func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId string, version uint64) (concurrencyException bool, err error) {
 	s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery start")
 	t := time.Now()
 	defer func() {
@@ -480,18 +483,26 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 	defer sess.Close()
 
 	if aggregateId == "" {
-		return fmt.Errorf("cannot save snapshot query: invalid query.AggregateId")
+		return false, fmt.Errorf("cannot save snapshot query: invalid query.AggregateId")
 	}
 
 	sbSnap := makeDBSnapshot(groupId, aggregateId, version)
 	col := sess.DB(s.DBName()).C(snapshotCName)
 
-	err := ensureIndex(col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
+	err = ensureIndex(col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
 	if err != nil {
-		return fmt.Errorf("cannot save snapshot query: %v", err)
+		return false, fmt.Errorf("cannot save snapshot query: %v", err)
+	}
+	if version == 0 {
+		err := col.Insert(sbSnap)
+		if mgo.IsDup(err) {
+			// someone update store newer snapshot
+			return true, nil
+		}
+		return false, err
 	}
 
-	if _, err := col.Upsert(
+	if err = col.Update(
 		bson.M{
 			"_id": sbSnap.Id,
 			versionKey: bson.M{
@@ -502,11 +513,11 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 	); err != nil {
 		if err == mgo.ErrNotFound || mgo.IsDup(err) {
 			// someone update store newer snapshot
-			return nil
+			return true, nil
 		}
-		return fmt.Errorf("cannot save snapshot query: %v", err)
+		return false, fmt.Errorf("cannot save snapshot query: %v", err)
 	}
-	return nil
+	return false, nil
 }
 
 func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {

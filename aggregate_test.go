@@ -255,7 +255,7 @@ func testNewEventstore(t *testing.T) *mongodb.EventStore {
 
 	var pool *ants.Pool
 
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 128, pool, func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 2, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -324,7 +324,7 @@ func TestAggregate(t *testing.T) {
 	}
 
 	newAggragate := func() *Aggregate {
-		a, err := NewAggregate(path.AggregateId, NewDefaultRetryFunc(1), 128, store, func(context.Context) (AggregateModel, error) {
+		a, err := NewAggregate(path.AggregateId, NewDefaultRetryFunc(1), 2, store, func(context.Context) (AggregateModel, error) {
 			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
 		}, nil)
 		assert.NoError(t, err)
