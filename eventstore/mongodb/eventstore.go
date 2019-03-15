@@ -458,9 +458,9 @@ func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event
 
 type dbSnapshot struct {
 	Id          string `bson:"_id"`
-	GroupId     string `bson:groupid`
-	AggregateId string `bson:aggregateid`
-	Version     uint64 `bson:version`
+	GroupId     string `bson:groupIdKey`
+	AggregateId string `bson:aggregateIdKey`
+	Version     uint64 `bson:versionKey`
 }
 
 // newDBEvent returns a new dbEvent for an event.
