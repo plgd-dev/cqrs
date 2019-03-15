@@ -10,12 +10,12 @@
   version = "v1.3.5"
 
 [[projects]]
-  digest = "1:28917d5a3f5e53a4c8a4035195c022649c66a4d71d6357a2276cd347945bd527"
+  digest = "1:82a18170c9c41e36939cb5d26da1546b2cfa786aa030a978d3bf183519849230"
   name = "github.com/Shopify/sarama"
   packages = ["."]
   pruneopts = "UT"
-  revision = "03a43f93cd29dc549e6d9b11892795c206f9c38c"
-  version = "v1.20.1"
+  revision = "4602b5a8c6e826f9e0737865818dd43b2339a092"
+  version = "v1.21.0"
 
 [[projects]]
   digest = "1:526d64d0a3ac6c24875724a9355895be56a21f89a5d3ab5ba88d91244269a7d8"
@@ -74,18 +74,18 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0cfba2341540b1e077c13019f1b375469e45d6e15628485eef477824386f4ff1"
+  digest = "1:09f242b7991309d44d169bded3a264addf9649a5580a7bca969ec665082a243d"
   name = "github.com/go-ocf/kit"
   packages = [
     "cqrs/protobuf",
     "http",
   ]
   pruneopts = "UT"
-  revision = "968df3c8ad96cf8f9e5baf72526b26bd8a9112bf"
+  revision = "322a330a67c079d2fbef9393d2ae9c83997f0e41"
 
 [[projects]]
   branch = "master"
-  digest = "1:f02e6dc3dc0849feee1bfb7e5c1e8ff0845783f841d62cc482b03184efb53404"
+  digest = "1:b3974300a432af5784df2b118fe33f5be28605a17c144be80afd4dfb502a8b8b"
   name = "github.com/go-ocf/resource-aggregate"
   packages = [
     "protobuf",
@@ -93,7 +93,7 @@
     "protobuf/events",
   ]
   pruneopts = "UT"
-  revision = "2cdb748c93ec54f80522aa7ed2eb1edc6ca8a7e1"
+  revision = "fe109e9234def01b607d8d2d4223be436fbfe90a"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
@@ -196,7 +196,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:d9fff816672fef4dd9db94ce28ca12a650b58c84a1033a2cf543a9e9eec31d77"
+  digest = "1:e261a281680b984e2017097542b7ed2a84983c9aa2da95b1bf6d78ed712f9581"
   name = "github.com/valyala/fasthttp"
   packages = [
     ".",
@@ -204,7 +204,7 @@
     "stackless",
   ]
   pruneopts = "UT"
-  revision = "ed3793a1e1602989ba50bd20823e8521a4da84af"
+  revision = "517df8833274a3bf8c1377ceec64a8f131876cb7"
 
 [solve-meta]
   analyzer-name = "dep"

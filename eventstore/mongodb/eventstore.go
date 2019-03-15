@@ -210,7 +210,7 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 
 func (s *EventStore) SaveSnapshot(ctx context.Context, groupId string, aggregateId string, ev event.Event) (concurrencyException bool, err error) {
 	concurrencyException, err = s.Save(ctx, groupId, aggregateId, []event.Event{ev})
-	if err == nil {
+	if !concurrencyException && err == nil {
 		return s.SaveSnapshotQuery(ctx, groupId, aggregateId, ev.Version())
 	}
 	return concurrencyException, err
