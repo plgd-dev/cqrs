@@ -11,17 +11,15 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	kitCqrsProto "github.com/go-ocf/kit/cqrs/protobuf"
+	pbCRQS "github.com/go-ocf/kit/cqrs/pb"
 	"github.com/go-ocf/kit/http"
-	resources "github.com/go-ocf/resource-aggregate/protobuf"
-	"github.com/go-ocf/resource-aggregate/protobuf/commands"
-	"github.com/go-ocf/resource-aggregate/protobuf/events"
+	pbRA "github.com/go-ocf/resource-aggregate/pb"
 	"github.com/panjf2000/ants"
 	"github.com/stretchr/testify/assert"
 )
 
 type ResourcePublished struct {
-	events.ResourcePublished
+	pbRA.ResourcePublished
 }
 
 func (e ResourcePublished) Version() uint64 {
@@ -37,7 +35,7 @@ func (e *ResourcePublished) Unmarshal(b []byte) error {
 }
 
 func (e ResourcePublished) EventType() string {
-	return http.ProtobufContentType(&events.ResourcePublished{})
+	return http.ProtobufContentType(&pbRA.ResourcePublished{})
 }
 
 func (e ResourcePublished) AggregateId() string {
@@ -45,7 +43,7 @@ func (e ResourcePublished) AggregateId() string {
 }
 
 type ResourceUnpublished struct {
-	events.ResourceUnpublished
+	pbRA.ResourceUnpublished
 }
 
 func (e ResourceUnpublished) Version() uint64 {
@@ -61,7 +59,7 @@ func (e *ResourceUnpublished) Unmarshal(b []byte) error {
 }
 
 func (e ResourceUnpublished) EventType() string {
-	return http.ProtobufContentType(&events.ResourceUnpublished{})
+	return http.ProtobufContentType(&pbRA.ResourceUnpublished{})
 }
 
 func (e ResourceUnpublished) AggregateId() string {
@@ -69,7 +67,7 @@ func (e ResourceUnpublished) AggregateId() string {
 }
 
 type ResourceStateSnapshotTaken struct {
-	events.ResourceStateSnapshotTaken
+	pbRA.ResourceStateSnapshotTaken
 }
 
 func (rs *ResourceStateSnapshotTaken) AggregateId() string {
@@ -89,7 +87,7 @@ func (rs *ResourceStateSnapshotTaken) Unmarshal(b []byte) error {
 }
 
 func (rs *ResourceStateSnapshotTaken) EventType() string {
-	return http.ProtobufContentType(&events.ResourceStateSnapshotTaken{})
+	return http.ProtobufContentType(&pbRA.ResourceStateSnapshotTaken{})
 }
 
 func (rs *ResourceStateSnapshotTaken) HandleEventResourcePublished(ctx context.Context, pub ResourcePublished) error {
@@ -115,13 +113,13 @@ func (rs *ResourceStateSnapshotTaken) Handle(ctx context.Context, iter event.Ite
 			return errors.New("cannot determine type of event")
 		}
 		switch eu.EventType {
-		case http.ProtobufContentType(&events.ResourceStateSnapshotTaken{}):
-			var s events.ResourceStateSnapshotTaken
+		case http.ProtobufContentType(&pbRA.ResourceStateSnapshotTaken{}):
+			var s pbRA.ResourceStateSnapshotTaken
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
 			}
 			rs.ResourceStateSnapshotTaken = s
-		case http.ProtobufContentType(&events.ResourcePublished{}):
+		case http.ProtobufContentType(&pbRA.ResourcePublished{}):
 			var s ResourcePublished
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
@@ -129,7 +127,7 @@ func (rs *ResourceStateSnapshotTaken) Handle(ctx context.Context, iter event.Ite
 			if err := rs.HandleEventResourcePublished(ctx, s); err != nil {
 				return err
 			}
-		case http.ProtobufContentType(&events.ResourceUnpublished{}):
+		case http.ProtobufContentType(&pbRA.ResourceUnpublished{}):
 			var s ResourceUnpublished
 			if err := eu.Unmarshal(&s); err != nil {
 				return err
@@ -151,15 +149,15 @@ func TimeNowMs() uint64 {
 }
 
 //CreateEventMeta for creating EventMetadata from ResourcefModel
-func CreateEventMeta(newVersion uint64) kitCqrsProto.EventMetadata {
-	return kitCqrsProto.EventMetadata{
+func CreateEventMeta(newVersion uint64) pbCRQS.EventMetadata {
+	return pbCRQS.EventMetadata{
 		Version:     newVersion,
 		TimestampMs: TimeNowMs(),
 	}
 }
 
-func CreateAuditContext(a *kitCqrsProto.AuthorizationContext, correlationId string) kitCqrsProto.AuditContext {
-	return kitCqrsProto.AuditContext{
+func CreateAuditContext(a *pbCRQS.AuthorizationContext, correlationId string) pbCRQS.AuditContext {
+	return pbCRQS.AuditContext{
 		UserId:        a.UserId,
 		DeviceId:      a.DeviceId,
 		CorrelationId: correlationId,
@@ -168,12 +166,12 @@ func CreateAuditContext(a *kitCqrsProto.AuthorizationContext, correlationId stri
 
 func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Command, newVersion uint64) ([]event.Event, error) {
 	switch req := cmd.(type) {
-	case commands.PublishResourceRequest:
+	case pbRA.PublishResourceRequest:
 		correlationId, _ := ctx.Value(CorrelationID).(string)
 		ac := CreateAuditContext(req.AuthorizationContext, correlationId)
 
 		em := CreateEventMeta(newVersion)
-		rp := ResourcePublished{events.ResourcePublished{
+		rp := ResourcePublished{pbRA.ResourcePublished{
 			Id:            req.ResourceId,
 			Resource:      req.Resource,
 			TimeToLive:    req.TimeToLive,
@@ -186,11 +184,11 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 			return nil, fmt.Errorf("cannot handle resource publish: %v", err)
 		}
 		return []event.Event{rp}, nil
-	case commands.UnpublishResourceRequest:
+	case pbRA.UnpublishResourceRequest:
 		correlationId, _ := ctx.Value(CorrelationID).(string)
 		ac := CreateAuditContext(req.AuthorizationContext, correlationId)
 		em := CreateEventMeta(newVersion)
-		ru := ResourceUnpublished{events.ResourceUnpublished{
+		ru := ResourceUnpublished{pbRA.ResourceUnpublished{
 			Id:            req.ResourceId,
 			AuditContext:  &ac,
 			EventMetadata: &em,
@@ -217,7 +215,7 @@ func (rs *ResourceStateSnapshotTaken) TakeSnapshot(version uint64) (event.Event,
 }
 
 type mockEventHandler struct {
-	events []event.EventUnmarshaler
+	pbRA []event.EventUnmarshaler
 }
 
 func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
@@ -226,7 +224,7 @@ func (eh *mockEventHandler) Handle(ctx context.Context, iter event.Iter) error {
 		if eu.EventType == "" {
 			return errors.New("cannot determine type of event")
 		}
-		eh.events = append(eh.events, eu)
+		eh.pbRA = append(eh.pbRA, eu)
 	}
 	return nil
 }
@@ -255,7 +253,7 @@ func testNewEventstore(t *testing.T) *mongodb.EventStore {
 
 	var pool *ants.Pool
 
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "events", 2, pool, func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(url, "test_aggregate", "pbRA", 2, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -297,79 +295,79 @@ func TestAggregate(t *testing.T) {
 		AggregateId: "ID1",
 	}
 
-	commandPub := commands.PublishResourceRequest{
+	commandPub := pbRA.PublishResourceRequest{
 		ResourceId: path.AggregateId,
-		Resource: &resources.Resource{
+		Resource: &pbRA.Resource{
 			Id: path.AggregateId,
 		},
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCRQS.AuthorizationContext{},
 	}
 
-	commandUnpub := commands.UnpublishResourceRequest{
+	commandUnpub := pbRA.UnpublishResourceRequest{
 		ResourceId:           path.AggregateId,
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCRQS.AuthorizationContext{},
 	}
 
-	commandPub1 := commands.PublishResourceRequest{
+	commandPub1 := pbRA.PublishResourceRequest{
 		ResourceId: path1.AggregateId,
-		Resource: &resources.Resource{
+		Resource: &pbRA.Resource{
 			Id: path1.AggregateId,
 		},
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCRQS.AuthorizationContext{},
 	}
 
-	commandUnpub1 := commands.UnpublishResourceRequest{
+	commandUnpub1 := pbRA.UnpublishResourceRequest{
 		ResourceId:           path1.AggregateId,
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCRQS.AuthorizationContext{},
 	}
 
 	newAggragate := func() *Aggregate {
 		a, err := NewAggregate(path.AggregateId, NewDefaultRetryFunc(1), 2, store, func(context.Context) (AggregateModel, error) {
-			return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
+			return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCRQS.EventMetadata{}}}, nil
 		}, nil)
 		assert.NoError(t, err)
 		return a
 	}
 
 	a := newAggragate()
-	events, err := a.HandleCommand(ctx, commandPub)
+	pbRA, err := a.HandleCommand(ctx, commandPub)
 	assert.NoError(t, err)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
 	b := newAggragate()
-	events, err = b.HandleCommand(ctx, commandPub)
+	pbRA, err = b.HandleCommand(ctx, commandPub)
 	assert.Error(t, err)
-	assert.Nil(t, events)
+	assert.Nil(t, pbRA)
 
 	c := newAggragate()
-	events, err = c.HandleCommand(ctx, commandUnpub)
+	pbRA, err = c.HandleCommand(ctx, commandUnpub)
 	assert.NoError(t, err)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
 	d := newAggragate()
-	events, err = d.HandleCommand(ctx, commandUnpub)
+	pbRA, err = d.HandleCommand(ctx, commandUnpub)
 	assert.Error(t, err)
-	assert.Nil(t, events)
+	assert.Nil(t, pbRA)
 
 	e := newAggragate()
-	events, err = e.HandleCommand(ctx, commandPub1)
+	pbRA, err = e.HandleCommand(ctx, commandPub1)
 	assert.NoError(t, err)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
 	f := newAggragate()
-	events, err = f.HandleCommand(ctx, commandUnpub1)
+	pbRA, err = f.HandleCommand(ctx, commandUnpub1)
 	assert.NoError(t, err)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
 	g := newAggragate()
-	events, err = g.HandleCommand(ctx, commandPub)
+	pbRA, err = g.HandleCommand(ctx, commandPub)
 	assert.NoError(t, err)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
 	h := newAggragate()
-	events, err = h.HandleCommand(ctx, commandUnpub)
+	pbRA, err = h.HandleCommand(ctx, commandUnpub)
 	assert.NoError(t, err)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
 	handler := &mockEventHandler{}
 	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil }, nil)
@@ -383,7 +381,7 @@ func TestAggregate(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	//assert.Equal(t, nil, model.(*mockEventHandler).events)
+	//assert.Equal(t, nil, model.(*mockEventHandler).pbRA)
 
 	concurrencyExcepTestA := newAggragate()
 	model, err := concurrencyExcepTestA.factoryModel(ctx)
@@ -392,15 +390,15 @@ func TestAggregate(t *testing.T) {
 	amodel, err := newAggrModel(ctx, a.aggregateId, a.store, a.LogDebugfFunc, model)
 	assert.NoError(t, err)
 
-	events, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)
+	pbRA, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)
 	assert.NoError(t, err)
 	assert.False(t, concurrencyException)
-	assert.NotNil(t, events)
+	assert.NotNil(t, pbRA)
 
-	events, concurrencyException, err = a.handleCommandWithAggrModel(ctx, commandUnpub, amodel)
+	pbRA, concurrencyException, err = a.handleCommandWithAggrModel(ctx, commandUnpub, amodel)
 	assert.NoError(t, nil)
 	assert.True(t, concurrencyException)
-	assert.Nil(t, events)
+	assert.Nil(t, pbRA)
 }
 
 func canceledContext() context.Context {

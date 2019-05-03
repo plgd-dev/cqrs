@@ -78,3 +78,8 @@ func (b *Publisher) Publish(ctx context.Context, topics []string, groupId, aggre
 
 	return nil
 }
+
+// Close close publisher.
+func (b *Publisher) Close() error {
+	return b.producer.Close()
+}

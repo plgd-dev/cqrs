@@ -81,6 +81,7 @@ func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, 
 	config.Config = *b.config
 	config.Consumer.Return.Errors = true
 	config.Group.Return.Notifications = false
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 
 	client, err := cluster.NewClient(b.brokers, config)
 	if err != nil {
