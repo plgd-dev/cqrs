@@ -9,16 +9,14 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	kitCqrsProto "github.com/go-ocf/kit/cqrs/protobuf"
-	resources "github.com/go-ocf/resource-aggregate/protobuf"
-	"github.com/go-ocf/resource-aggregate/protobuf/commands"
+	pbCQRS "github.com/go-ocf/kit/cqrs/pb"
+	pbRA "github.com/go-ocf/resource-aggregate/pb"
 	"github.com/gofrs/uuid"
 	"github.com/panjf2000/ants"
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	"github.com/go-ocf/resource-aggregate/protobuf/events"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -65,7 +63,7 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	defer pool.Release()
 
-	store, err := mongodb.NewEventStore(url, "test_projection", "events", 128, pool, func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(url, "test_projection", "pbRA", 128, pool, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -108,38 +106,38 @@ func TestProjection(t *testing.T) {
 		AggregateId: "ID3",
 	}
 
-	commandPub1 := commands.PublishResourceRequest{
+	commandPub1 := pbRA.PublishResourceRequest{
 		ResourceId: path1.AggregateId,
-		Resource: &resources.Resource{
+		Resource: &pbRA.Resource{
 			Id: path1.AggregateId,
 		},
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCQRS.AuthorizationContext{},
 	}
 
-	commandPub2 := commands.PublishResourceRequest{
+	commandPub2 := pbRA.PublishResourceRequest{
 		ResourceId: path2.AggregateId,
-		Resource: &resources.Resource{
+		Resource: &pbRA.Resource{
 			Id: path2.AggregateId,
 		},
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCQRS.AuthorizationContext{},
 	}
 
-	commandPub3 := commands.PublishResourceRequest{
+	commandPub3 := pbRA.PublishResourceRequest{
 		ResourceId: path3.AggregateId,
-		Resource: &resources.Resource{
+		Resource: &pbRA.Resource{
 			Id: path3.AggregateId,
 		},
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCQRS.AuthorizationContext{},
 	}
 
-	commandUnpub1 := commands.UnpublishResourceRequest{
+	commandUnpub1 := pbRA.UnpublishResourceRequest{
 		ResourceId:           path1.AggregateId,
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCQRS.AuthorizationContext{},
 	}
 
-	commandUnpub3 := commands.UnpublishResourceRequest{
+	commandUnpub3 := pbRA.UnpublishResourceRequest{
 		ResourceId:           path3.AggregateId,
-		AuthorizationContext: &kitCqrsProto.AuthorizationContext{},
+		AuthorizationContext: &pbCQRS.AuthorizationContext{},
 	}
 
 	/*
@@ -149,7 +147,7 @@ func TestProjection(t *testing.T) {
 	*/
 
 	a1, err := NewAggregate(path1.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
 	}, nil)
 	assert.NoError(t, err)
 
@@ -163,7 +161,7 @@ func TestProjection(t *testing.T) {
 	}
 
 	a2, err := NewAggregate(path2.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
 	}, nil)
 	assert.NoError(t, err)
 
@@ -200,7 +198,7 @@ func TestProjection(t *testing.T) {
 	time.Sleep(waitForSubscription)
 
 	a3, err := NewAggregate(path3.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{events.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &resources.Resource{}, EventMetadata: &kitCqrsProto.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
 	}, nil)
 	assert.NoError(t, err)
 

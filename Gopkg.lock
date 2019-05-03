@@ -2,20 +2,20 @@
 
 
 [[projects]]
-  digest = "1:ed77032e4241e3b8329c9304d66452ed196e795876e14be677a546f36b94e67a"
+  digest = "1:6d8a3b164679872fa5a4c44559235f7fb109c7b5cd0f456a2159d579b76cc9ba"
   name = "github.com/DataDog/zstd"
   packages = ["."]
   pruneopts = "UT"
-  revision = "c7161f8c63c045cbc7ca051dcc969dd0e4054de2"
-  version = "v1.3.5"
+  revision = "809b919c325d7887bff7bd876162af73db53e878"
+  version = "v1.4.0"
 
 [[projects]]
-  digest = "1:82a18170c9c41e36939cb5d26da1546b2cfa786aa030a978d3bf183519849230"
+  digest = "1:2ec153af6a806c3d63d4299f2549bcb29d75d9703097341be309a46db3481488"
   name = "github.com/Shopify/sarama"
   packages = ["."]
   pruneopts = "UT"
-  revision = "4602b5a8c6e826f9e0737865818dd43b2339a092"
-  version = "v1.21.0"
+  revision = "ea9ab1c316850bee881a07bb2555ee8a685cd4b6"
+  version = "v1.22.1"
 
 [[projects]]
   digest = "1:526d64d0a3ac6c24875724a9355895be56a21f89a5d3ab5ba88d91244269a7d8"
@@ -74,26 +74,22 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:09f242b7991309d44d169bded3a264addf9649a5580a7bca969ec665082a243d"
+  digest = "1:debd6948d01d21f818ae1731aea28e24481e880219aee550217eb6e7e61af52f"
   name = "github.com/go-ocf/kit"
   packages = [
-    "cqrs/protobuf",
+    "cqrs/pb",
     "http",
   ]
   pruneopts = "UT"
-  revision = "322a330a67c079d2fbef9393d2ae9c83997f0e41"
+  revision = "a19000040f091a6362a13c36883608ac117ca710"
 
 [[projects]]
   branch = "master"
-  digest = "1:b3974300a432af5784df2b118fe33f5be28605a17c144be80afd4dfb502a8b8b"
+  digest = "1:b486aec614f123709ff839c5272b7e662aca5954b3b23e793b7a101f6d014e62"
   name = "github.com/go-ocf/resource-aggregate"
-  packages = [
-    "protobuf",
-    "protobuf/commands",
-    "protobuf/events",
-  ]
+  packages = ["pb"]
   pruneopts = "UT"
-  revision = "fe109e9234def01b607d8d2d4223be436fbfe90a"
+  revision = "155e4947a2ef36d80803ce7226ad40ee1dea28fd"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
@@ -116,6 +112,20 @@
   version = "v1.2.1"
 
 [[projects]]
+  digest = "1:239c4c7fd2159585454003d9be7207167970194216193a8a210b8d29576f19c9"
+  name = "github.com/golang/protobuf"
+  packages = [
+    "proto",
+    "ptypes",
+    "ptypes/any",
+    "ptypes/duration",
+    "ptypes/timestamp",
+  ]
+  pruneopts = "UT"
+  revision = "b5d812f8a3706043e23a9cd5babf2e5423744d30"
+  version = "v1.3.1"
+
+[[projects]]
   digest = "1:e4f5819333ac698d294fe04dbf640f84719658d5c7ce195b10060cc37292ce79"
   name = "github.com/golang/snappy"
   packages = ["."]
@@ -132,35 +142,35 @@
     "zlib",
   ]
   pruneopts = "UT"
-  revision = "30be6041bed523c18e269a700ebd9c2ea9328574"
-  version = "v1.4.1"
+  revision = "b4b6d9e7f099f14b3a4a08f0664986cd4c85ebd6"
+  version = "v1.5.0"
 
 [[projects]]
-  digest = "1:2d643962fac133904694fffa959bc3c5dcfdcee38c6f5ffdd99a3c93eb9c835c"
+  digest = "1:923c4d7194b42e054b2eb8a6c62824ac55e23ececc1c7e48d4da69c971c55954"
   name = "github.com/klauspost/cpuid"
   packages = ["."]
   pruneopts = "UT"
-  revision = "e7e905edc00ea8827e58662220139109efea09db"
-  version = "v1.2.0"
+  revision = "05a8198c0f5a27739aec358908d7e12c64ce6eb7"
+  version = "v1.2.1"
 
 [[projects]]
-  digest = "1:ce33c87d3c813074190a3551912c446a05048dafa436429ba9e467532bc9cdd1"
+  digest = "1:9ae0d8ea7a876d02bd206dc87bc4c947fa91288aa8c8b0c0b3be1427be854875"
   name = "github.com/panjf2000/ants"
   packages = ["."]
   pruneopts = "UT"
-  revision = "8bb0cde224fdf3a1c6915b4dbd943bc506b42257"
-  version = "v4.1"
+  revision = "d6076c09aa1c1a7d190fe70d00c1332bf72982a0"
+  version = "v1.0.0"
 
 [[projects]]
-  digest = "1:d4c88b5ad20151a96c1e5a55547a944b6af623aa315f69ee0d172b00f95d27fb"
+  digest = "1:259f9b7645983a7a823318d78aa96dec68af8891f706493ac1ec04d819cb977c"
   name = "github.com/pierrec/lz4"
   packages = [
     ".",
     "internal/xxh32",
   ]
   pruneopts = "UT"
-  revision = "062282ea0dcff40c9fb8525789eef9644b1fbd6e"
-  version = "v2.1.0"
+  revision = "d705d4371bfccdf47f10e45584e896026c83616f"
+  version = "v2.2.3"
 
 [[projects]]
   digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
@@ -196,7 +206,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e261a281680b984e2017097542b7ed2a84983c9aa2da95b1bf6d78ed712f9581"
+  digest = "1:e7f017dd58313530f359ad769513eb87e1ecd9b4729a46e58035e6a9e667aac0"
   name = "github.com/valyala/fasthttp"
   packages = [
     ".",
@@ -204,7 +214,106 @@
     "stackless",
   ]
   pruneopts = "UT"
-  revision = "517df8833274a3bf8c1377ceec64a8f131876cb7"
+  revision = "15dbe35bb591e48819071bec8a6d1779c8334cfe"
+
+[[projects]]
+  branch = "master"
+  digest = "1:32994edb29ec0011564d41eee0d7a895ac537d4565e8804ae253a1470bcf7f8a"
+  name = "golang.org/x/net"
+  packages = [
+    "http/httpguts",
+    "http2",
+    "http2/hpack",
+    "idna",
+    "internal/socks",
+    "internal/timeseries",
+    "proxy",
+    "trace",
+  ]
+  pruneopts = "UT"
+  revision = "7f726cade0ab7c929c16ce0b5b25bd201e25f39f"
+
+[[projects]]
+  branch = "master"
+  digest = "1:1ddfda089b8a15d92242412aabc1107b8c7a87c609c09c5b441c81dbcca0ab79"
+  name = "golang.org/x/sys"
+  packages = ["unix"]
+  pruneopts = "UT"
+  revision = "a43fa875dd822b81eb6d2ad538bc1f4caba169bd"
+
+[[projects]]
+  digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
+  name = "golang.org/x/text"
+  packages = [
+    "collate",
+    "collate/build",
+    "internal/colltab",
+    "internal/gen",
+    "internal/language",
+    "internal/language/compact",
+    "internal/tag",
+    "internal/triegen",
+    "internal/ucd",
+    "language",
+    "secure/bidirule",
+    "transform",
+    "unicode/bidi",
+    "unicode/cldr",
+    "unicode/norm",
+    "unicode/rangetable",
+  ]
+  pruneopts = "UT"
+  revision = "342b2e1fbaa52c93f31447ad2c6abc048c63e475"
+  version = "v0.3.2"
+
+[[projects]]
+  branch = "master"
+  digest = "1:c3076e7defee87de1236f1814beb588f40a75544c60121e6eb38b3b3721783e2"
+  name = "google.golang.org/genproto"
+  packages = ["googleapis/rpc/status"]
+  pruneopts = "UT"
+  revision = "54afdca5d873f7b529e2ce3def1a99df16feda90"
+
+[[projects]]
+  digest = "1:707c3a5d10ed430ea767d73df122d9eb3dfb6312bbacc9f2e39204390686d1d0"
+  name = "google.golang.org/grpc"
+  packages = [
+    ".",
+    "balancer",
+    "balancer/base",
+    "balancer/roundrobin",
+    "binarylog/grpc_binarylog_v1",
+    "codes",
+    "connectivity",
+    "credentials",
+    "credentials/internal",
+    "encoding",
+    "encoding/proto",
+    "grpclog",
+    "internal",
+    "internal/backoff",
+    "internal/balancerload",
+    "internal/binarylog",
+    "internal/channelz",
+    "internal/envconfig",
+    "internal/grpcrand",
+    "internal/grpcsync",
+    "internal/syscall",
+    "internal/transport",
+    "keepalive",
+    "metadata",
+    "naming",
+    "peer",
+    "resolver",
+    "resolver/dns",
+    "resolver/passthrough",
+    "stats",
+    "status",
+    "tap",
+  ]
+  pruneopts = "UT"
+  revision = "25c4f928eaa6d96443009bd842389fb4fa48664e"
+  version = "v1.20.1"
 
 [solve-meta]
   analyzer-name = "dep"
@@ -215,11 +324,9 @@
     "github.com/globalsign/mgo",
     "github.com/globalsign/mgo/bson",
     "github.com/globalsign/mgo/txn",
-    "github.com/go-ocf/kit/cqrs/protobuf",
+    "github.com/go-ocf/kit/cqrs/pb",
     "github.com/go-ocf/kit/http",
-    "github.com/go-ocf/resource-aggregate/protobuf",
-    "github.com/go-ocf/resource-aggregate/protobuf/commands",
-    "github.com/go-ocf/resource-aggregate/protobuf/events",
+    "github.com/go-ocf/resource-aggregate/pb",
     "github.com/gofrs/uuid",
     "github.com/gogo/protobuf/gogoproto",
     "github.com/gogo/protobuf/proto",
