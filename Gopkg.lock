@@ -81,7 +81,7 @@
     "http",
   ]
   pruneopts = "UT"
-  revision = "a19000040f091a6362a13c36883608ac117ca710"
+  revision = "bdbb5dcda443860f525b71a6e32728896b8be084"
 
 [[projects]]
   branch = "master"
@@ -154,6 +154,34 @@
   version = "v1.2.1"
 
 [[projects]]
+  digest = "1:2ca73053216eb11c8eea2855c8099ad82773638522f91cc0542ec9759163ff3c"
+  name = "github.com/nats-io/go-nats"
+  packages = [
+    ".",
+    "encoders/builtin",
+    "util",
+  ]
+  pruneopts = "UT"
+  revision = "70fe06cee50d4b6f98248d9675fb55f2a3aa7228"
+  version = "v1.7.2"
+
+[[projects]]
+  digest = "1:0b5d91120efc54504bc253fda90b08c4be88cd78a4023ef60019e95bb0cdc136"
+  name = "github.com/nats-io/nkeys"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "1546a3320a8f195a5b5c84aef8309377c2e411d5"
+  version = "v0.0.2"
+
+[[projects]]
+  digest = "1:599f3202ce0a754144ddc4be4c6df9c6ab27b1d722a63ede6b2e0c3a2cc338a8"
+  name = "github.com/nats-io/nuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "4b96681fa6d28dd0ab5fe79bac63b3a493d9ee94"
+  version = "v1.0.1"
+
+[[projects]]
   digest = "1:9ae0d8ea7a876d02bd206dc87bc4c947fa91288aa8c8b0c0b3be1427be854875"
   name = "github.com/panjf2000/ants"
   packages = ["."]
@@ -218,7 +246,18 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:32994edb29ec0011564d41eee0d7a895ac537d4565e8804ae253a1470bcf7f8a"
+  digest = "1:d5891c5bca9c62e5d394ca26491d2b710a1dc08cedeb0ca8f9ac4c3305120b02"
+  name = "golang.org/x/crypto"
+  packages = [
+    "ed25519",
+    "ed25519/internal/edwards25519",
+  ]
+  pruneopts = "UT"
+  revision = "a29dc8fdc73485234dbef99ebedb95d2eced08de"
+
+[[projects]]
+  branch = "master"
+  digest = "1:3598ce3539b57350806fd964b18ca3c57cfce49ee52d9d442b2be9c494c2ef6d"
   name = "golang.org/x/net"
   packages = [
     "http/httpguts",
@@ -231,7 +270,7 @@
     "trace",
   ]
   pruneopts = "UT"
-  revision = "7f726cade0ab7c929c16ce0b5b25bd201e25f39f"
+  revision = "f4e77d36d62c17c2336347bb2670ddbd02d092b7"
 
 [[projects]]
   branch = "master"
@@ -330,6 +369,7 @@
     "github.com/gofrs/uuid",
     "github.com/gogo/protobuf/gogoproto",
     "github.com/gogo/protobuf/proto",
+    "github.com/nats-io/go-nats",
     "github.com/panjf2000/ants",
     "github.com/stretchr/testify/assert",
   ]

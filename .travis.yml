@@ -5,8 +5,8 @@ services:
 
 install:                                                                 
   - docker build . --network=host -t cqrs:build --target build
-  - docker-compose pull zookeeper kafka mongo
-  - docker-compose up -d zookeeper kafka mongo
+  - docker-compose pull zookeeper kafka nats mongo
+  - docker-compose up -d zookeeper kafka nats mongo
 
 jobs:
   include:
