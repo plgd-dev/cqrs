@@ -29,7 +29,7 @@ func TestSubscriber(t *testing.T) {
 	config.Producer.Flush.MaxMessages = 1
 
 	timeout := time.Second * 30
-	waitForSubscription := time.Second * 8
+	waitForSubscription := time.Second * 10
 
 	publisher, err := NewPublisher(
 		[]string{broker},
@@ -245,11 +245,11 @@ func acceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	assert.NoError(t, err)
 	assert.Equal(t, eventsToPublish[2], event2)
 
-	event3, err := m3.waitForEvent(timeout)
+	event3, err := testWaitForAnyEvent(timeout, m3, m4)
 	assert.NoError(t, err)
 	assert.Equal(t, eventsToPublish[0], event3)
 
-	event3, err = m3.waitForEvent(timeout)
+	event3, err = testWaitForAnyEvent(timeout, m3, m4)
 	assert.NoError(t, err)
 	assert.Equal(t, eventsToPublish[1], event3)
 
