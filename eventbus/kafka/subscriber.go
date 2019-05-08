@@ -18,7 +18,8 @@ type Subscriber struct {
 	brokers         []string
 	config          *sarama.Config
 	dataUnmarshaler event.UnmarshalerFunc
-	errFunc         ErrFunc
+	errFunc         eventbus.ErrFunc
+	goroutinePoolGo eventbus.GoroutinePoolGoFunc
 }
 
 //Observer handles events from kafka
@@ -32,15 +33,12 @@ type Observer struct {
 	dataUnmarshaler event.UnmarshalerFunc
 	eventHandler    event.Handler
 	wg              sync.WaitGroup
-	errFunc         ErrFunc
+	errFunc         eventbus.ErrFunc
 	lock            sync.Mutex
 }
 
-// ErrFunc used by observer to report error from observation
-type ErrFunc func(err error)
-
 // NewSubscriber creates a subscriber.
-func NewSubscriber(brokers []string, config *sarama.Config, eventUnmarshaler event.UnmarshalerFunc, errFunc ErrFunc) (*Subscriber, error) {
+func NewSubscriber(brokers []string, config *sarama.Config, eventUnmarshaler event.UnmarshalerFunc, goroutinePoolGo eventbus.GoroutinePoolGoFunc, errFunc eventbus.ErrFunc) (*Subscriber, error) {
 	if len(brokers) == 0 {
 		return nil, fmt.Errorf("invalid brokers")
 	}
@@ -59,12 +57,13 @@ func NewSubscriber(brokers []string, config *sarama.Config, eventUnmarshaler eve
 		config:          config,
 		dataUnmarshaler: eventUnmarshaler,
 		errFunc:         errFunc,
+		goroutinePoolGo: goroutinePoolGo,
 	}, nil
 }
 
 // Subscribe creates a observer that listen on events from topics.
 func (b *Subscriber) Subscribe(ctx context.Context, subscriptionID string, topics []string, eh event.Handler) (eventbus.Observer, error) {
-	observer, err := b.newObservation(ctx, subscriptionID, eh)
+	observer, err := b.newObservation(ctx, subscriptionID, eventbus.NewGoroutinePoolHandler(b.goroutinePoolGo, eh, b.errFunc))
 	if err != nil {
 		return nil, fmt.Errorf("cannot observe: %v", err)
 	}
@@ -87,6 +86,7 @@ func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, 
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect client for subscription: %v", err)
 	}
+
 	return &Observer{
 		client:          client,
 		subscriptionId:  subscriptionId,

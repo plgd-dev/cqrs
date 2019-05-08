@@ -11,7 +11,6 @@ import (
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/globalsign/mgo/txn"
-	"github.com/panjf2000/ants"
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
@@ -36,7 +35,7 @@ type LogDebugfFunc func(fmt string, args ...interface{})
 // EventStore implements an EventStore for MongoDB.
 type EventStore struct {
 	session         *mgo.Session
-	pool            *ants.Pool
+	goroutinePoolGo eventstore.GoroutinePoolGoFunc
 	LogDebugfFunc   LogDebugfFunc
 	dbPrefix        string
 	colPrefix       string
@@ -46,7 +45,7 @@ type EventStore struct {
 }
 
 // NewEventStore creates a new EventStore.
-func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
+func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, goroutinePoolGo eventstore.GoroutinePoolGoFunc, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
 	session, err := mgo.Dial(url)
 	if err != nil {
 		return nil, fmt.Errorf("could not dial database: %v", err)
@@ -55,11 +54,11 @@ func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, pool *
 	session.SetMode(mgo.Strong, true)
 	session.SetSafe(&mgo.Safe{W: 1})
 
-	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, pool, eventMarshaler, eventUnmarshaler, LogDebugfFunc)
+	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, goroutinePoolGo, eventMarshaler, eventUnmarshaler, LogDebugfFunc)
 }
 
 // NewEventStoreWithSession creates a new EventStore with a session.
-func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, pool *ants.Pool, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
+func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, goroutinePoolGo eventstore.GoroutinePoolGoFunc, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
 	if session == nil {
 		return nil, errors.New("no database session")
 	}
@@ -88,7 +87,7 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 	}
 
 	s := &EventStore{
-		pool:            pool,
+		goroutinePoolGo:            goroutinePoolGo,
 		session:         session,
 		dbPrefix:        dbPrefix,
 		colPrefix:       colPrefix,
@@ -314,7 +313,7 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 			wg.Add(1)
 			l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:newTask")
 			tmp := queries
-			err := l.store.pool.Submit(func() {
+			err := l.store.goroutinePoolGo(func() {
 				defer wg.Done()
 				l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:task:LoadFromVersion:start")
 				err := l.store.LoadFromVersion(ctx, tmp, l.eventHandler)
@@ -571,7 +570,7 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 
 	iter := sess.DB(s.DBName()).C(snapshotCName).Find(snapshotQueriesToMgoQuery(queries)).Iter()
 	var err error
-	if s.pool != nil {
+	if s.goroutinePoolGo != nil {
 		err = qh.QueryHandlePool(ctx, &queryIterator{iter})
 	} else {
 		err = qh.QueryHandle(ctx, &queryIterator{iter})

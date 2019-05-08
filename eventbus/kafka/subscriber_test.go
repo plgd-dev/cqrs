@@ -29,7 +29,6 @@ func TestSubscriber(t *testing.T) {
 	config.Producer.Flush.MaxMessages = 1
 
 	timeout := time.Second * 30
-	waitForSubscription := time.Second * 10
 
 	publisher, err := NewPublisher(
 		[]string{broker},
@@ -43,11 +42,12 @@ func TestSubscriber(t *testing.T) {
 		[]string{broker},
 		config,
 		json.Unmarshal,
+		func(f func()) error { go f(); return nil },
 		func(err error) { assert.NoError(t, err) },
 	)
 	assert.NotNil(t, subscriber)
 
-	acceptanceTest(t, context.Background(), timeout, waitForSubscription, topics, publisher, subscriber)
+	acceptanceTest(t, context.Background(), timeout, topics, publisher, subscriber)
 }
 
 type mockEvent struct {
@@ -127,7 +127,7 @@ func testNewSubscription(t *testing.T, ctx context.Context, subscriber eventbus.
 	return m, ob
 }
 
-func acceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, waitForSubscription time.Duration, topics []string, publisher eventbus.Publisher, subscriber eventbus.Subscriber) {
+func acceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, topics []string, publisher eventbus.Publisher, subscriber eventbus.Subscriber) {
 	AggregateID1 := "aggregateID1"
 	AggregateID2 := "aggregateID2"
 	type Path struct {
@@ -191,25 +191,26 @@ func acceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	t.Log("Without subscription")
 	err := publisher.Publish(ctx, topics[0:1], aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[0])
 	assert.NoError(t, err)
-	time.Sleep(waitForSubscription)
 
 	// Add handlers and observers.
 	t.Log("Subscribe to first topic")
 	m0, ob0 := testNewSubscription(t, ctx, subscriber, "sub-0", topics[0:1])
-	time.Sleep(waitForSubscription)
 
 	err = publisher.Publish(ctx, topics[0:1], aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[1])
 	assert.NoError(t, err)
 
 	event, err := m0.waitForEvent(timeout)
 	assert.NoError(t, err)
+
 	assert.Equal(t, eventsToPublish[0], event)
+
 	event, err = m0.waitForEvent(timeout)
 	assert.NoError(t, err)
 	assert.Equal(t, eventsToPublish[1], event)
 
 	err = ob0.Close()
 	assert.NoError(t, err)
+
 	t.Log("Subscribe more observers")
 	m1, ob1 := testNewSubscription(t, ctx, subscriber, "sub-1", topics[1:2])
 	defer func() {
@@ -231,8 +232,6 @@ func acceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 		err = ob4.Close()
 		assert.NoError(t, err)
 	}()
-
-	time.Sleep(waitForSubscription)
 
 	err = publisher.Publish(ctx, topics, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[2])
 	assert.NoError(t, err)
@@ -260,7 +259,6 @@ func acceptanceTest(t *testing.T, ctx context.Context, timeout time.Duration, wa
 	topic := "new_topic_" + uuid.Must(uuid.NewV4()).String()
 	topics = append(topics, topic)
 	err = ob4.SetTopics(ctx, topics)
-	time.Sleep(waitForSubscription)
 	assert.NoError(t, err)
 
 	err = publisher.Publish(ctx, []string{topic}, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, eventsToPublish[3])

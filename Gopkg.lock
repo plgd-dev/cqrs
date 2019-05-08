@@ -81,7 +81,7 @@
     "http",
   ]
   pruneopts = "UT"
-  revision = "bdbb5dcda443860f525b71a6e32728896b8be084"
+  revision = "16d9db5ebce1e39878854fbcd2d3d699bea8b71f"
 
 [[projects]]
   branch = "master"
@@ -89,7 +89,7 @@
   name = "github.com/go-ocf/resource-aggregate"
   packages = ["pb"]
   pruneopts = "UT"
-  revision = "155e4947a2ef36d80803ce7226ad40ee1dea28fd"
+  revision = "21d6d3ebed06d6d917135ddf2d114094dfbe561a"
 
 [[projects]]
   digest = "1:bed9d72d596f94e65fff37f4d6c01398074a6bb1c3f3ceff963516bd01db6ff5"
@@ -234,7 +234,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e7f017dd58313530f359ad769513eb87e1ecd9b4729a46e58035e6a9e667aac0"
+  digest = "1:7e12ccc0a8e49d3b71d2f38df60eeadf6108e181d1b2eb53983d413cabe3d222"
   name = "github.com/valyala/fasthttp"
   packages = [
     ".",
@@ -242,7 +242,7 @@
     "stackless",
   ]
   pruneopts = "UT"
-  revision = "15dbe35bb591e48819071bec8a6d1779c8334cfe"
+  revision = "f544170d6384e251aa6657e55bac36c999c86e7a"
 
 [[projects]]
   branch = "master"
@@ -253,7 +253,7 @@
     "ed25519/internal/edwards25519",
   ]
   pruneopts = "UT"
-  revision = "a29dc8fdc73485234dbef99ebedb95d2eced08de"
+  revision = "e1dfcc566284e143ba8f9afbb3fa563f2a0d212b"
 
 [[projects]]
   branch = "master"
@@ -274,11 +274,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:1ddfda089b8a15d92242412aabc1107b8c7a87c609c09c5b441c81dbcca0ab79"
+  digest = "1:4fc43e824f7e546353de724c00507b1d9c0bab56344b10c2330a97f166a0fba7"
   name = "golang.org/x/sys"
   packages = ["unix"]
   pruneopts = "UT"
-  revision = "a43fa875dd822b81eb6d2ad538bc1f4caba169bd"
+  revision = "2d0786266e9cd132da844109aa05016f11f3df28"
 
 [[projects]]
   digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
@@ -307,11 +307,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:c3076e7defee87de1236f1814beb588f40a75544c60121e6eb38b3b3721783e2"
+  digest = "1:fc5df4cb84cdf639ef702c176a50a9ee08ea3e68ebd67519c0f4f963c7d82978"
   name = "google.golang.org/genproto"
   packages = ["googleapis/rpc/status"]
   pruneopts = "UT"
-  revision = "54afdca5d873f7b529e2ce3def1a99df16feda90"
+  revision = "b515fa19cec88c32f305a962f34ae60068947aea"
 
 [[projects]]
   digest = "1:707c3a5d10ed430ea767d73df122d9eb3dfb6312bbacc9f2e39204390686d1d0"

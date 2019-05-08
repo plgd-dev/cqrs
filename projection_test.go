@@ -46,6 +46,7 @@ func TestProjection(t *testing.T) {
 		[]string{broker},
 		config,
 		json.Unmarshal,
+		func(f func()) error { go f(); return nil },
 		func(err error) { assert.NoError(t, err) },
 	)
 	assert.NoError(t, err)
@@ -63,17 +64,23 @@ func TestProjection(t *testing.T) {
 	assert.NoError(t, err)
 	defer pool.Release()
 
-	store, err := mongodb.NewEventStore(url, "test_projection", "pbRA", 128, pool, func(v interface{}) ([]byte, error) {
-		if p, ok := v.(ProtobufMarshaler); ok {
-			return p.Marshal()
-		}
-		return nil, fmt.Errorf("marshal is not supported by %T", v)
-	}, func(b []byte, v interface{}) error {
-		if p, ok := v.(ProtobufUnmarshaler); ok {
-			return p.Unmarshal(b)
-		}
-		return fmt.Errorf("marshal is not supported by %T", v)
-	}, nil)
+	store, err := mongodb.NewEventStore(
+		url,
+		"test_projection",
+		"pbRA",
+		128,
+		func(f func()) error { go f(); return nil },
+		func(v interface{}) ([]byte, error) {
+			if p, ok := v.(ProtobufMarshaler); ok {
+				return p.Marshal()
+			}
+			return nil, fmt.Errorf("marshal is not supported by %T", v)
+		}, func(b []byte, v interface{}) error {
+			if p, ok := v.(ProtobufUnmarshaler); ok {
+				return p.Unmarshal(b)
+			}
+			return fmt.Errorf("marshal is not supported by %T", v)
+		}, nil)
 	/*bson.Marshal, bson.Unmarshal*/
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
