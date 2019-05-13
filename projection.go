@@ -65,6 +65,9 @@ func (p *Projection) SubscribeTo(topics []string) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	if p.subscriber == nil {
+		return nil
+	}
 	if p.observer == nil {
 		if p.subscriber == nil {
 			return fmt.Errorf("projection doesn't support subscribe to topics")

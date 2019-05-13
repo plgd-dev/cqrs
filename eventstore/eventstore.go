@@ -27,3 +27,6 @@ type EventStore interface {
 	LoadFromVersion(ctx context.Context, queries []VersionQuery, eventHandler event.Handler) error
 	LoadFromSnapshot(ctx context.Context, queries []SnapshotQuery, eventHandler event.Handler) error
 }
+
+// GoroutinePoolGoFunc processes actions via provided function
+type GoroutinePoolGoFunc func(func()) error

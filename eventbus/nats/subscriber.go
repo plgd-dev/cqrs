@@ -15,9 +15,10 @@ import (
 type Subscriber struct {
 	clientId        string
 	dataUnmarshaler event.UnmarshalerFunc
-	errFunc         ErrFunc
+	errFunc         eventbus.ErrFunc
 	conn            *nats.Conn
 	url             string
+	goroutinePoolGo eventbus.GoroutinePoolGoFunc
 }
 
 //Observer handles events from kafka
@@ -25,17 +26,14 @@ type Observer struct {
 	lock            sync.Mutex
 	dataUnmarshaler event.UnmarshalerFunc
 	eventHandler    event.Handler
-	errFunc         ErrFunc
+	errFunc         eventbus.ErrFunc
 	conn            *nats.Conn
 	subscriptionId  string
 	subs            map[string]*nats.Subscription
 }
 
-// ErrFunc used by observer to report error from observation
-type ErrFunc func(err error)
-
 // NewSubscriber creates a subscriber.
-func NewSubscriber(url string, eventUnmarshaler event.UnmarshalerFunc, errFunc ErrFunc, options ...nats.Option) (*Subscriber, error) {
+func NewSubscriber(url string, eventUnmarshaler event.UnmarshalerFunc, goroutinePoolGo eventbus.GoroutinePoolGoFunc, errFunc eventbus.ErrFunc, options ...nats.Option) (*Subscriber, error) {
 	conn, err := nats.Connect(url, options...)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create client: %v", err)
@@ -45,12 +43,13 @@ func NewSubscriber(url string, eventUnmarshaler event.UnmarshalerFunc, errFunc E
 		dataUnmarshaler: eventUnmarshaler,
 		errFunc:         errFunc,
 		conn:            conn,
+		goroutinePoolGo: goroutinePoolGo,
 	}, nil
 }
 
 // Subscribe creates a observer that listen on events from topics.
 func (b *Subscriber) Subscribe(ctx context.Context, subscriptionId string, topics []string, eh event.Handler) (eventbus.Observer, error) {
-	observer := b.newObservation(ctx, subscriptionId, eh)
+	observer := b.newObservation(ctx, subscriptionId, eventbus.NewGoroutinePoolHandler(b.goroutinePoolGo, eh, b.errFunc))
 
 	err := observer.SetTopics(ctx, topics)
 	if err != nil {
@@ -69,9 +68,9 @@ func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, 
 	return &Observer{
 		conn:            b.conn,
 		dataUnmarshaler: b.dataUnmarshaler,
-		eventHandler:    eh,
 		subscriptionId:  subscriptionId,
 		subs:            make(map[string]*nats.Subscription),
+		eventHandler:    eh,
 	}
 }
 

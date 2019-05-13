@@ -27,9 +27,13 @@ func TestSubscriber(t *testing.T) {
 	assert.NotNil(t, publisher)
 	defer publisher.Close()
 
-	subscriber, err := NewSubscriber(nats.DefaultURL, json.Unmarshal, func(err error) {
-		assert.NoError(t, err)
-	})
+	subscriber, err := NewSubscriber(nats.DefaultURL,
+		json.Unmarshal,
+		func(f func()) error { go f(); return nil },
+		func(err error) {
+			assert.NoError(t, err)
+		},
+	)
 	subscriber.dataUnmarshaler = json.Unmarshal
 	assert.NotNil(t, subscriber)
 	assert.NoError(t, err)

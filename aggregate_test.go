@@ -14,7 +14,6 @@ import (
 	pbCRQS "github.com/go-ocf/kit/cqrs/pb"
 	"github.com/go-ocf/kit/http"
 	pbRA "github.com/go-ocf/resource-aggregate/pb"
-	"github.com/panjf2000/ants"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -251,9 +250,7 @@ func testNewEventstore(t *testing.T) *mongodb.EventStore {
 		url = "localhost:27017"
 	}
 
-	var pool *ants.Pool
-
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "pbRA", 2, pool, func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(url, "test_aggregate", "pbRA", 2, nil, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
