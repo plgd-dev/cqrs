@@ -17,7 +17,7 @@ type GoroutinePoolGoFunc func(func()) error
 // GoroutinePoolHandler submit events to goroutine pool for process them.
 type GoroutinePoolHandler struct {
 	lock                     sync.Mutex
-	aggregateEventsContainer map[string]*eventsData
+	aggregateEventsContainer map[string]*eventsProcessor
 
 	goroutinePoolGo GoroutinePoolGoFunc
 	eventsHandler   event.Handler
@@ -34,8 +34,27 @@ func NewGoroutinePoolHandler(
 		goroutinePoolGo:          goroutinePoolGo,
 		eventsHandler:            eventsHandler,
 		errFunc:                  errFunc,
-		aggregateEventsContainer: make(map[string]*eventsData),
+		aggregateEventsContainer: make(map[string]*eventsProcessor),
 	}
+}
+
+func (ep *GoroutinePoolHandler) run(ctx context.Context, p *eventsProcessor) error {
+	if ep.goroutinePoolGo == nil {
+		err := p.process(ctx, ep.eventsHandler)
+		ep.tryToDelete(p.name)
+		return err
+	}
+	err := ep.goroutinePoolGo(func() {
+		err := p.process(ctx, ep.eventsHandler)
+		if err != nil {
+			ep.errFunc(err)
+		}
+		ep.tryToDelete(p.name)
+	})
+	if err != nil {
+		return fmt.Errorf("cannot execute goroutine pool go function: %v", err)
+	}
+	return nil
 }
 
 // Handle pushes event to queue and process the queue by goroutine pool.
@@ -47,9 +66,12 @@ func (ep *GoroutinePoolHandler) Handle(ctx context.Context, iter event.Iter) (er
 		id := eventToName(eu)
 		if lastId != "" && id != lastId || len(events) >= 128 {
 			ed := ep.getEventsData(id)
-			err := ed.push(ctx, events, ep.goroutinePoolGo, ep.eventsHandler, ep.tryToDelete, ep.errFunc)
-			if err != nil {
-				return fmt.Errorf("cannot handle events: %v", err)
+			spawnGo := ed.push(events)
+			if spawnGo {
+				err := ep.run(ctx, ed)
+				if err != nil {
+					return fmt.Errorf("cannot handle events: %v", err)
+				}
 			}
 			events = make([]event.EventUnmarshaler, 0, 128)
 		}
@@ -58,20 +80,23 @@ func (ep *GoroutinePoolHandler) Handle(ctx context.Context, iter event.Iter) (er
 	}
 	if len(events) > 0 {
 		ed := ep.getEventsData(eventToName(events[0]))
-		err := ed.push(ctx, events, ep.goroutinePoolGo, ep.eventsHandler, ep.tryToDelete, ep.errFunc)
-		if err != nil {
-			return fmt.Errorf("cannot handle events: %v", err)
+		spawnGo := ed.push(events)
+		if spawnGo {
+			err := ep.run(ctx, ed)
+			if err != nil {
+				return fmt.Errorf("cannot handle events: %v", err)
+			}
 		}
 	}
 	return nil
 }
 
-func (ep *GoroutinePoolHandler) getEventsData(name string) *eventsData {
+func (ep *GoroutinePoolHandler) getEventsData(name string) *eventsProcessor {
 	ep.lock.Lock()
 	defer ep.lock.Unlock()
 	ed, ok := ep.aggregateEventsContainer[name]
 	if !ok {
-		ed = newEventsData(name, ep.tryToDelete, ep.goroutinePoolGo, ep.eventsHandler, ep.errFunc)
+		ed = newEventsProcessor(name)
 		ep.aggregateEventsContainer[name] = ed
 	}
 	return ed
@@ -90,25 +115,21 @@ func (ep *GoroutinePoolHandler) tryToDelete(name string) {
 	}
 }
 
-type eventsData struct {
+type eventsProcessor struct {
 	name        string
 	queue       []event.EventUnmarshaler
 	isProcessed bool
 	lock        sync.Mutex
 }
 
-func newEventsData(name string,
-	tryToDelete func(name string),
-	goroutinePoolGo GoroutinePoolGoFunc,
-	eventsHandler event.Handler,
-	errFunc ErrFunc) *eventsData {
-	return &eventsData{
+func newEventsProcessor(name string) *eventsProcessor {
+	return &eventsProcessor{
 		name:  name,
 		queue: make([]event.EventUnmarshaler, 0, 128),
 	}
 }
 
-func (ed *eventsData) storeEvents(ctx context.Context, events []event.EventUnmarshaler) (spawnGo bool) {
+func (ed *eventsProcessor) push(events []event.EventUnmarshaler) bool {
 	ed.lock.Lock()
 	defer ed.lock.Unlock()
 	ed.queue = append(ed.queue, events...)
@@ -119,29 +140,7 @@ func (ed *eventsData) storeEvents(ctx context.Context, events []event.EventUnmar
 	return false
 }
 
-func (ed *eventsData) push(ctx context.Context, events []event.EventUnmarshaler, goroutinePoolGo GoroutinePoolGoFunc, eh event.Handler, tryToDelete func(id string), errFunc ErrFunc) error {
-	spawnGo := ed.storeEvents(ctx, events)
-	if goroutinePoolGo == nil {
-		err := ed.process(ctx, eh)
-		tryToDelete(ed.name)
-		return err
-	}
-	if spawnGo {
-		err := goroutinePoolGo(func() {
-			err := ed.process(ctx, eh)
-			if err != nil {
-				errFunc(err)
-			}
-			tryToDelete(ed.name)
-		})
-		if err != nil {
-			return fmt.Errorf("cannot execute goroutine pool go function: %v", err)
-		}
-	}
-	return nil
-}
-
-func (ed *eventsData) pop() []event.EventUnmarshaler {
+func (ed *eventsProcessor) pop() []event.EventUnmarshaler {
 	ed.lock.Lock()
 	defer ed.lock.Unlock()
 	if len(ed.queue) > 0 {
@@ -153,7 +152,7 @@ func (ed *eventsData) pop() []event.EventUnmarshaler {
 	return nil
 }
 
-func (ed *eventsData) process(ctx context.Context, eh event.Handler) error {
+func (ed *eventsProcessor) process(ctx context.Context, eh event.Handler) error {
 	for {
 		events := ed.pop()
 		if len(events) == 0 {
