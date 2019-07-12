@@ -27,12 +27,12 @@ type RetryFunc func() (when time.Time, err error)
 
 // NewDefaultRetryFunc default retry function
 func NewDefaultRetryFunc(limit int) RetryFunc {
-	counter := 0
+	counter := new(int)
 	return func() (time.Time, error) {
-		if counter >= limit {
+		if *counter >= limit {
 			return time.Time{}, fmt.Errorf("retry reach limit")
 		}
-		counter++
+		*counter++
 		return time.Now().Add(time.Millisecond * 10), nil
 	}
 }

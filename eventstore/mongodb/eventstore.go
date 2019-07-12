@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/globalsign/mgo"
-	"github.com/globalsign/mgo/bson"
-	"github.com/globalsign/mgo/txn"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
@@ -23,18 +25,34 @@ const aggregateIdKey = "aggregateid"
 const groupIdKey = "groupid"
 const versionKey = "version"
 
-var snapshotsQueryIndex = []string{groupIdKey, aggregateIdKey}
-var snapshotsQueryGroupIdIndex = []string{groupIdKey}
+var snapshotsQueryIndex = bson.D{
+	{groupIdKey, 1},
+	{aggregateIdKey, 1},
+}
 
-var eventsQueryIndex = []string{versionKey, aggregateIdKey, groupIdKey}
-var eventsQueryGroupIdIndex = []string{versionKey, groupIdKey}
-var eventsQueryAggregateIdIndex = []string{versionKey, aggregateIdKey}
+var snapshotsQueryGroupIdIndex = bson.D{
+	{groupIdKey, 1},
+}
+
+var eventsQueryIndex = bson.D{
+	{versionKey, 1},
+	{aggregateIdKey, 1},
+	{groupIdKey, 1},
+}
+var eventsQueryGroupIdIndex = bson.D{
+	{versionKey, 1},
+	{groupIdKey, 1},
+}
+var eventsQueryAggregateIdIndex = bson.D{
+	{versionKey, 1},
+	{aggregateIdKey, 1},
+}
 
 type LogDebugfFunc func(fmt string, args ...interface{})
 
 // EventStore implements an EventStore for MongoDB.
 type EventStore struct {
-	session         *mgo.Session
+	client          *mongo.Client
 	goroutinePoolGo eventstore.GoroutinePoolGoFunc
 	LogDebugfFunc   LogDebugfFunc
 	dbPrefix        string
@@ -45,22 +63,25 @@ type EventStore struct {
 }
 
 // NewEventStore creates a new EventStore.
-func NewEventStore(url, dbPrefix string, colPrefix string, batchSize int, goroutinePoolGo eventstore.GoroutinePoolGoFunc, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
-	session, err := mgo.Dial(url)
+func NewEventStore(ctx context.Context, host, dbPrefix string, colPrefix string, batchSize int, goroutinePoolGo eventstore.GoroutinePoolGoFunc, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc, opts ...*options.ClientOptions) (*EventStore, error) {
+	newOpts := []*options.ClientOptions{options.Client().ApplyURI("mongodb://" + host)}
+	newOpts = append(newOpts, opts...)
+	client, err := mongo.Connect(ctx, newOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("could not dial database: %v", err)
+	}
+	err = client.Ping(ctx, readpref.Primary())
 	if err != nil {
 		return nil, fmt.Errorf("could not dial database: %v", err)
 	}
 
-	session.SetMode(mgo.Strong, true)
-	session.SetSafe(&mgo.Safe{W: 1})
-
-	return NewEventStoreWithSession(session, dbPrefix, colPrefix, batchSize, goroutinePoolGo, eventMarshaler, eventUnmarshaler, LogDebugfFunc)
+	return NewEventStoreWithClient(ctx, client, dbPrefix, colPrefix, batchSize, goroutinePoolGo, eventMarshaler, eventUnmarshaler, LogDebugfFunc)
 }
 
-// NewEventStoreWithSession creates a new EventStore with a session.
-func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix string, batchSize int, goroutinePoolGo eventstore.GoroutinePoolGoFunc, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
-	if session == nil {
-		return nil, errors.New("no database session")
+// NewEventStoreWithClient creates a new EventStore with a session.
+func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix string, colPrefix string, batchSize int, goroutinePoolGo eventstore.GoroutinePoolGoFunc, eventMarshaler event.MarshalerFunc, eventUnmarshaler event.UnmarshalerFunc, LogDebugfFunc LogDebugfFunc) (*EventStore, error) {
+	if client == nil {
+		return nil, errors.New("invalid client")
 	}
 
 	if eventMarshaler == nil {
@@ -87,8 +108,8 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 	}
 
 	s := &EventStore{
-		goroutinePoolGo:            goroutinePoolGo,
-		session:         session,
+		goroutinePoolGo: goroutinePoolGo,
+		client:          client,
 		dbPrefix:        dbPrefix,
 		colPrefix:       colPrefix,
 		dataMarshaler:   eventMarshaler,
@@ -97,16 +118,49 @@ func NewEventStoreWithSession(session *mgo.Session, dbPrefix string, colPrefix s
 		LogDebugfFunc:   LogDebugfFunc,
 	}
 
+	colEv := s.client.Database(s.DBName()).Collection(eventCName)
+	err := ensureIndex(ctx, colEv, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
+	if err != nil {
+		return nil, fmt.Errorf("cannot save events: %v", err)
+	}
+	colSn := s.client.Database(s.DBName()).Collection(snapshotCName)
+	err = ensureIndex(ctx, colSn, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
+	if err != nil {
+		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
+	}
+
 	return s, nil
 }
 
-func (s *EventStore) saveEvent(col *mgo.Collection, groupId string, aggregateId string, event event.Event) (concurrencyException bool, err error) {
+// IsDup check it error is duplicate
+func IsDup(err error) bool {
+	// Besides being handy, helps with MongoDB bugs SERVER-7164 and SERVER-11493.
+	// What follows makes me sad. Hopefully conventions will be more clear over time.
+	switch e := err.(type) {
+	case mongo.CommandError:
+		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582 || e.Code == 16460 && strings.Contains(e.Message, " E11000 ")
+	case mongo.WriteError:
+		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
+	case mongo.WriteException:
+		isDup := true
+		for _, werr := range e.WriteErrors {
+			if !IsDup(werr) {
+				isDup = false
+			}
+		}
+		return isDup
+	}
+	return false
+}
+
+func (s *EventStore) saveEvent(ctx context.Context, col *mongo.Collection, groupId string, aggregateId string, event event.Event) (concurrencyException bool, err error) {
 	e, err := makeDBEvent(groupId, aggregateId, event, s.dataMarshaler)
 	if err != nil {
 		return false, err
 	}
-	if err := col.Insert(e); err != nil {
-		if mgo.IsDup(err) {
+
+	if _, err := col.InsertOne(ctx, e); err != nil {
+		if IsDup(err) {
 			return true, nil
 		}
 		return false, fmt.Errorf("cannot save events: %v", err)
@@ -114,10 +168,10 @@ func (s *EventStore) saveEvent(col *mgo.Collection, groupId string, aggregateId 
 	return false, nil
 }
 
-func (s *EventStore) saveEvents(col *mgo.Collection, groupId, aggregateId string, events []event.Event) (concurrencyException bool, err error) {
+func (s *EventStore) saveEvents(ctx context.Context, col *mongo.Collection, groupId, aggregateId string, events []event.Event) (concurrencyException bool, err error) {
 	firstEvent := true
 	version := events[0].Version()
-	ops := make([]txn.Op, 0, len(events))
+	ops := make([]interface{}, 0, len(events))
 	for _, event := range events {
 		if firstEvent {
 			firstEvent = false
@@ -134,33 +188,39 @@ func (s *EventStore) saveEvents(col *mgo.Collection, groupId, aggregateId string
 		if err != nil {
 			return false, err
 		}
-		ops = append(ops, txn.Op{
-			Id:     e.Id,
-			C:      eventCName,
-			Assert: txn.DocMissing,
-			Insert: e,
-		})
-
+		ops = append(ops, e)
 	}
 
-	runner := txn.NewRunner(col)
-	err = runner.Run(ops, "", nil)
-
-	if err != nil {
-		return true, nil
+	if _, err := col.InsertMany(ctx, ops); err != nil {
+		if IsDup(err) {
+			return true, nil
+		}
+		return false, fmt.Errorf("cannot save events: %v", err)
 	}
 	return false, err
 }
 
-func ensureIndex(col *mgo.Collection, indexes ...[]string) error {
+type index struct {
+	Key  map[string]int
+	NS   string
+	Name string
+}
 
-	for _, key := range indexes {
-		index := mgo.Index{
-			Key:        key,
-			Background: true,
+func ensureIndex(ctx context.Context, col *mongo.Collection, indexes ...bson.D) error {
+	for _, keys := range indexes {
+		opts := options.Index()
+		opts.SetBackground(false)
+		index := mongo.IndexModel{
+			Keys:    keys,
+			Options: opts,
 		}
-		err := col.EnsureIndex(index)
+
+		_, err := col.Indexes().CreateOne(ctx, index)
 		if err != nil {
+			if strings.HasPrefix(err.Error(), "(IndexKeySpecsConflict)") {
+				//index already exist, just skip error and continue
+				continue
+			}
 			return fmt.Errorf("cannot ensure indexes for eventstore: %v", err)
 		}
 	}
@@ -174,8 +234,6 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.Save takes %v", time.Since(t))
 	}()
-	sess := s.session.Copy()
-	defer sess.Close()
 
 	if len(events) == 0 {
 		return false, errors.New("cannot save empty events")
@@ -194,17 +252,18 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 		}
 	}
 
-	col := sess.DB(s.DBName()).C(eventCName)
-
-	err = ensureIndex(col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
-	if err != nil {
-		return false, fmt.Errorf("cannot save events: %v", err)
-	}
+	col := s.client.Database(s.DBName()).Collection(eventCName)
+	/*
+		err = ensureIndex(ctx, col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
+		if err != nil {
+			return false, fmt.Errorf("cannot save events: %v", err)
+		}
+	*/
 
 	if len(events) > 1 {
-		return s.saveEvents(col, groupId, aggregateId, events)
+		return s.saveEvents(ctx, col, groupId, aggregateId, events)
 	}
-	return s.saveEvent(col, groupId, aggregateId, events[0])
+	return s.saveEvent(ctx, col, groupId, aggregateId, events[0])
 }
 
 func (s *EventStore) SaveSnapshot(ctx context.Context, groupId string, aggregateId string, ev event.Event) (concurrencyException bool, err error) {
@@ -216,7 +275,7 @@ func (s *EventStore) SaveSnapshot(ctx context.Context, groupId string, aggregate
 }
 
 type iterator struct {
-	iter            *mgo.Iter
+	iter            *mongo.Cursor
 	dataUnmarshaler event.UnmarshalerFunc
 	LogDebugfFunc   LogDebugfFunc
 }
@@ -224,16 +283,22 @@ type iterator struct {
 func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	var event dbEvent
 
-	if !i.iter.Next(&event) {
+	if !i.iter.Next(ctx) {
 		return false
 	}
+
+	err := i.iter.Decode(&event)
+	if err != nil {
+		return false
+	}
+
 	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
 
 	e.Version = event.Version
 	e.AggregateId = event.AggregateId
 	e.EventType = event.EventType
 	e.GroupId = event.GroupId
-	data := event.Data.Data
+	data := event.Data
 	e.Unmarshal = func(v interface{}) error {
 		return i.dataUnmarshaler(data, v)
 	}
@@ -362,11 +427,15 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.V
 	if err != nil {
 		return fmt.Errorf("cannot load events from version: %v", err)
 	}
-
-	sess := s.session.Copy()
-	defer sess.Close()
-
-	iter := sess.DB(s.DBName()).C(eventCName).Find(q).Hint(eventsQueryAggregateIdIndex...).Iter()
+	opts := options.FindOptions{}
+	opts.SetHint(eventsQueryAggregateIdIndex)
+	iter, err := s.client.Database(s.DBName()).Collection(eventCName).Find(ctx, q, &opts)
+	if err == mongo.ErrNilDocument {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 
 	i := iterator{
 		iter:            iter,
@@ -375,7 +444,7 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.V
 	}
 	err = eh.Handle(ctx, &i)
 
-	errClose := iter.Close()
+	errClose := iter.Close(ctx)
 	if err == nil {
 		return errClose
 	}
@@ -403,14 +472,13 @@ func (s *EventStore) DBName() string {
 
 // Clear clears the event storage.
 func (s *EventStore) Clear(ctx context.Context) error {
-	sess := s.session.Copy()
-	defer sess.Close()
-
 	var errors []error
-	if err := sess.DB(s.DBName()).C(eventCName).DropCollection(); err != nil {
+	s.client.Database(s.DBName()).Collection(eventCName).Indexes().DropAll(ctx)
+	if err := s.client.Database(s.DBName()).Collection(eventCName).Drop(ctx); err != nil {
 		errors = append(errors, err)
 	}
-	if err := sess.DB(s.DBName()).C(snapshotCName).DropCollection(); err != nil {
+	s.client.Database(s.DBName()).Collection(snapshotCName).Indexes().DropAll(ctx)
+	if err := s.client.Database(s.DBName()).Collection(snapshotCName).Drop(ctx); err != nil {
 		errors = append(errors, err)
 	}
 	if len(errors) > 0 {
@@ -421,19 +489,19 @@ func (s *EventStore) Clear(ctx context.Context) error {
 }
 
 // Close closes the database session.
-func (s *EventStore) Close() {
-	s.session.Close()
+func (s *EventStore) Close(ctx context.Context) error {
+	return s.client.Disconnect(ctx)
 }
 
 // dbEvent is the internal event record for the MongoDB event store used
 // to save and load events from the DB.
 type dbEvent struct {
-	Data        bson.Binary `bson:"data,omitempty"`
-	AggregateId string      `bson:aggregateIdKey`
-	Id          string      `bson:"_id"`
-	Version     uint64      `bson:versionKey`
-	EventType   string      `bson:"eventtype"`
-	GroupId     string      `bson:groupIdKey`
+	Data        []byte `bson:"data,omitempty"`
+	AggregateId string `bson:aggregateIdKey`
+	Id          string `bson:"_id"`
+	Version     uint64 `bson:versionKey`
+	EventType   string `bson:"eventtype"`
+	GroupId     string `bson:groupIdKey`
 }
 
 // newDBEvent returns a new dbEvent for an event.
@@ -443,10 +511,9 @@ func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event
 	if err != nil {
 		return dbEvent{}, fmt.Errorf("cannot create db event: %v", err)
 	}
-	rawData := bson.Binary{Kind: 0, Data: raw}
 
 	return dbEvent{
-		Data:        rawData,
+		Data:        raw,
 		AggregateId: aggregateId,
 		Version:     event.Version(),
 		EventType:   event.EventType(),
@@ -478,39 +545,40 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery takes %v", time.Since(t))
 	}()
-	sess := s.session.Copy()
-	defer sess.Close()
 
 	if aggregateId == "" {
 		return false, fmt.Errorf("cannot save snapshot query: invalid query.AggregateId")
 	}
 
 	sbSnap := makeDBSnapshot(groupId, aggregateId, version)
-	col := sess.DB(s.DBName()).C(snapshotCName)
-
-	err = ensureIndex(col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
-	if err != nil {
-		return false, fmt.Errorf("cannot save snapshot query: %v", err)
-	}
+	col := s.client.Database(s.DBName()).Collection(snapshotCName)
+	/*
+		err = ensureIndex(ctx, col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
+		if err != nil {
+			return false, fmt.Errorf("cannot save snapshot query: %v", err)
+		}
+	*/
 	if version == 0 {
-		err := col.Insert(sbSnap)
-		if mgo.IsDup(err) {
+		_, err := col.InsertOne(ctx, sbSnap)
+		if err != nil && IsDup(err) {
 			// someone update store newer snapshot
 			return true, nil
 		}
 		return false, err
 	}
 
-	if err = col.Update(
+	if _, err = col.UpdateOne(ctx,
 		bson.M{
 			"_id": sbSnap.Id,
 			versionKey: bson.M{
 				"$lt": sbSnap.Version,
 			},
 		},
-		sbSnap,
+		bson.M{
+			"$set": sbSnap,
+		},
 	); err != nil {
-		if err == mgo.ErrNotFound || mgo.IsDup(err) {
+		if err == mongo.ErrNilDocument || IsDup(err) {
 			// someone update store newer snapshot
 			return true, nil
 		}
@@ -540,13 +608,18 @@ func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {
 }
 
 type queryIterator struct {
-	iter *mgo.Iter
+	iter *mongo.Cursor
 }
 
 func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bool {
 	var query dbSnapshot
 
-	if !i.iter.Next(&query) {
+	if !i.iter.Next(ctx) {
+		return false
+	}
+
+	err := i.iter.Decode(&query)
+	if err != nil {
 		return false
 	}
 
@@ -565,17 +638,20 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries takes %v", time.Since(t))
 	}()
-	sess := s.session.Copy()
-	defer sess.Close()
 
-	iter := sess.DB(s.DBName()).C(snapshotCName).Find(snapshotQueriesToMgoQuery(queries)).Iter()
-	var err error
+	iter, err := s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, snapshotQueriesToMgoQuery(queries))
+	if err == mongo.ErrNilDocument {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	if s.goroutinePoolGo != nil {
 		err = qh.QueryHandlePool(ctx, &queryIterator{iter})
 	} else {
 		err = qh.QueryHandle(ctx, &queryIterator{iter})
 	}
-	errClose := iter.Close()
+	errClose := iter.Close(ctx)
 	if err == nil {
 		return errClose
 	}

@@ -8,7 +8,7 @@ import (
 
 	event "github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockEvent struct {
@@ -138,60 +138,60 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 
 	t.Log("save no events")
 	conExcep, err := store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, nil)
-	assert.Error(t, err)
-	assert.False(t, conExcep)
+	require.Error(t, err)
+	require.False(t, conExcep)
 
 	t.Log("save event, VersionI 0")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
 		eventsToSave[0],
 	})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 
 	t.Log("save event, VersionI 1")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
 		eventsToSave[1],
 	})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 
 	t.Log("try to save same event VersionI 1 twice")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
 		eventsToSave[1],
 	})
-	assert.True(t, conExcep)
-	assert.NoError(t, err)
+	require.True(t, conExcep)
+	require.NoError(t, err)
 
 	t.Log("save event, VersionI 2")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
 		eventsToSave[2],
 	})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 
 	t.Log("save multiple events, VersionI 3, 4 and 5")
 	conExcep, err = store.Save(ctx, aggregateID1Path.GroupId, aggregateID1Path.AggregateId, []event.Event{
 		eventsToSave[3], eventsToSave[4], eventsToSave[5],
 	})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 
 	t.Log("save event for another aggregate")
 	conExcep, err = store.Save(ctx, aggregateID2Path.GroupId, aggregateID2Path.AggregateId, []event.Event{
 		eventsToSave[0]})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 
 	conExcep, err = store.Save(ctx, aggregateID2Path.GroupId, aggregateID2Path.AggregateId, []event.Event{
 		eventsToSave[6], eventsToSave[7], eventsToSave[8]})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 
 	t.Log("load events for non-existing aggregate")
 	eh1 := NewMockEventHandler()
 	err = store.LoadFromSnapshot(ctx, []eventstore.SnapshotQuery{{GroupId: "notExist"}}, eh1)
-	assert.NoError(t, err)
-	assert.Equal(t, 0, len(eh1.events))
+	require.NoError(t, err)
+	require.Equal(t, 0, len(eh1.events))
 
 	t.Log("load events")
 	eh2 := NewMockEventHandler()
@@ -201,8 +201,8 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 			AggregateId: aggregateID1Path.AggregateId,
 		},
 	}, eh2)
-	assert.NoError(t, err)
-	assert.Equal(t, eventsToSave[:6], eh2.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
+	require.NoError(t, err)
+	require.Equal(t, eventsToSave[:6], eh2.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
 
 	t.Log("load events from version")
 	eh3 := NewMockEventHandler()
@@ -212,8 +212,8 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 			Version:     eventsToSave[2].Version(),
 		},
 	}, eh3)
-	assert.NoError(t, err)
-	assert.Equal(t, eventsToSave[2:6], eh3.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
+	require.NoError(t, err)
+	require.Equal(t, eventsToSave[2:6], eh3.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
 
 	t.Log("load multiple aggregatess by all queries")
 	eh4 := NewMockEventHandler()
@@ -225,11 +225,11 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 			AggregateId: aggregateID2Path.AggregateId,
 		},
 	}, eh4)
-	assert.NoError(t, err)
-	assert.Equal(t, []event.Event{
+	require.NoError(t, err)
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
 	}, eh4.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, eh4.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
 
@@ -240,28 +240,28 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 			GroupId: aggregateID1Path.GroupId,
 		},
 	}, eh5)
-	assert.NoError(t, err)
-	assert.Equal(t, []event.Event{
+	require.NoError(t, err)
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
 	}, eh5.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, eh5.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
 
 	t.Log("load multiple aggregates by all")
 	eh6 := NewMockEventHandler()
 	conExcep, err = store.Save(ctx, aggregateID3Path.GroupId, aggregateID3Path.AggregateId, []event.Event{eventsToSave[0]})
-	assert.NoError(t, err)
-	assert.False(t, conExcep)
+	require.NoError(t, err)
+	require.False(t, conExcep)
 	err = store.LoadFromSnapshot(ctx, []eventstore.SnapshotQuery{}, eh6)
-	assert.NoError(t, err)
-	assert.Equal(t, []event.Event{
+	require.NoError(t, err)
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
 	}, eh6.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, eh6.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0],
 	}, eh6.events[aggregateID3Path.GroupId][aggregateID3Path.AggregateId])
 
@@ -270,14 +270,14 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return model, nil }, nil)
 
 	err = p.Project(ctx, []eventstore.SnapshotQuery{})
-	assert.NoError(t, err)
-	assert.Equal(t, []event.Event{
+	require.NoError(t, err)
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
 	}, model.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, model.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0],
 	}, model.events[aggregateID3Path.GroupId][aggregateID3Path.AggregateId])
 
@@ -286,11 +286,11 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	p = eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return model1, nil }, nil)
 
 	err = p.Project(ctx, []eventstore.SnapshotQuery{eventstore.SnapshotQuery{GroupId: aggregateID1Path.GroupId}})
-	assert.NoError(t, err)
-	assert.Equal(t, []event.Event{
+	require.NoError(t, err)
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
 	}, model1.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
-	assert.Equal(t, []event.Event{
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, model1.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
 
@@ -303,8 +303,8 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 			AggregateId: aggregateID2Path.AggregateId,
 		},
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, []event.Event{
+	require.NoError(t, err)
+	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, model2.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
 

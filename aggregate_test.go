@@ -14,7 +14,7 @@ import (
 	pbCRQS "github.com/go-ocf/kit/cqrs/pb"
 	"github.com/go-ocf/kit/http"
 	pbRA "github.com/go-ocf/resource-aggregate/pb"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type ResourcePublished struct {
@@ -243,14 +243,14 @@ type ProtobufUnmarshaler interface {
 
 func testNewEventstore(t *testing.T) *mongodb.EventStore {
 	// Local Mongo testing with Docker
-	url := os.Getenv("MONGO_HOST")
+	host := os.Getenv("MONGO_HOST")
 
-	if url == "" {
+	if host == "" {
 		// Default to localhost
-		url = "localhost:27017"
+		host = "localhost:27017"
 	}
 
-	store, err := mongodb.NewEventStore(url, "test_aggregate", "pbRA", 2, nil, func(v interface{}) ([]byte, error) {
+	store, err := mongodb.NewEventStore(context.Background(), host, "test_aggregate", "pbRA", 2, nil, func(v interface{}) ([]byte, error) {
 		if p, ok := v.(ProtobufMarshaler); ok {
 			return p.Marshal()
 		}
@@ -262,8 +262,8 @@ func testNewEventstore(t *testing.T) *mongodb.EventStore {
 		return fmt.Errorf("marshal is not supported by %T", v)
 	}, nil)
 	/*bson.Marshal, bson.Unmarshal*/
-	assert.NoError(t, err)
-	assert.NotNil(t, store)
+	require.NoError(t, err)
+	require.NotNil(t, store)
 
 	return store
 }
@@ -271,10 +271,10 @@ func testNewEventstore(t *testing.T) *mongodb.EventStore {
 func TestAggregate(t *testing.T) {
 	store := testNewEventstore(t)
 	ctx := context.Background()
-	defer store.Close()
+	defer store.Close(ctx)
 	defer func() {
 		err := store.Clear(ctx)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
 
 	type Path struct {
@@ -322,49 +322,49 @@ func TestAggregate(t *testing.T) {
 		a, err := NewAggregate(path.AggregateId, NewDefaultRetryFunc(1), 2, store, func(context.Context) (AggregateModel, error) {
 			return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCRQS.EventMetadata{}}}, nil
 		}, nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		return a
 	}
 
 	a := newAggragate()
 	pbRA, err := a.HandleCommand(ctx, commandPub)
-	assert.NoError(t, err)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.NotNil(t, pbRA)
 
 	b := newAggragate()
 	pbRA, err = b.HandleCommand(ctx, commandPub)
-	assert.Error(t, err)
-	assert.Nil(t, pbRA)
+	require.Error(t, err)
+	require.Nil(t, pbRA)
 
 	c := newAggragate()
 	pbRA, err = c.HandleCommand(ctx, commandUnpub)
-	assert.NoError(t, err)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.NotNil(t, pbRA)
 
 	d := newAggragate()
 	pbRA, err = d.HandleCommand(ctx, commandUnpub)
-	assert.Error(t, err)
-	assert.Nil(t, pbRA)
+	require.Error(t, err)
+	require.Nil(t, pbRA)
 
 	e := newAggragate()
 	pbRA, err = e.HandleCommand(ctx, commandPub1)
-	assert.NoError(t, err)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.NotNil(t, pbRA)
 
 	f := newAggragate()
 	pbRA, err = f.HandleCommand(ctx, commandUnpub1)
-	assert.NoError(t, err)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.NotNil(t, pbRA)
 
 	g := newAggragate()
 	pbRA, err = g.HandleCommand(ctx, commandPub)
-	assert.NoError(t, err)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.NotNil(t, pbRA)
 
 	h := newAggragate()
 	pbRA, err = h.HandleCommand(ctx, commandUnpub)
-	assert.NoError(t, err)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.NotNil(t, pbRA)
 
 	handler := &mockEventHandler{}
 	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return handler, nil }, nil)
@@ -376,26 +376,26 @@ func TestAggregate(t *testing.T) {
 			SnapshotEventType: handler.SnapshotEventType(),
 		},
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	//assert.Equal(t, nil, model.(*mockEventHandler).pbRA)
+	//require.Equal(t, nil, model.(*mockEventHandler).pbRA)
 
 	concurrencyExcepTestA := newAggragate()
 	model, err := concurrencyExcepTestA.factoryModel(ctx)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	amodel, err := newAggrModel(ctx, a.aggregateId, a.store, a.LogDebugfFunc, model)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	pbRA, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)
-	assert.NoError(t, err)
-	assert.False(t, concurrencyException)
-	assert.NotNil(t, pbRA)
+	require.NoError(t, err)
+	require.False(t, concurrencyException)
+	require.NotNil(t, pbRA)
 
 	pbRA, concurrencyException, err = a.handleCommandWithAggrModel(ctx, commandUnpub, amodel)
-	assert.NoError(t, nil)
-	assert.True(t, concurrencyException)
-	assert.Nil(t, pbRA)
+	require.NoError(t, nil)
+	require.True(t, concurrencyException)
+	require.Nil(t, pbRA)
 }
 
 func canceledContext() context.Context {
