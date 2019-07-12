@@ -5,38 +5,40 @@ import (
 	"os"
 	"testing"
 
-	"github.com/globalsign/mgo/bson"
 	"github.com/go-ocf/cqrs/eventstore/test"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestEventStore(t *testing.T) {
 	// Local Mongo testing with Docker
-	url := os.Getenv("MONGO_HOST")
+	host := os.Getenv("MONGO_HOST")
 
-	if url == "" {
+	if host == "" {
 		// Default to localhost
-		url = "localhost:27017"
+		host = "localhost:27017"
 	}
+	ctx := context.Background()
 
 	store, err := NewEventStore(
-		url,
+		ctx,
+		host,
 		"test_mongodb",
 		"events", 1,
 		func(f func()) error { go f(); return nil },
 		bson.Marshal,
 		bson.Unmarshal,
 		nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, store)
+	require.NoError(t, err)
+	require.NotNil(t, store)
 
-	defer store.Close()
+	defer store.Close(ctx)
 	defer func() {
 		t.Log("clearing db")
-		err := store.Clear(context.Background())
-		assert.NoError(t, err)
+		err := store.Clear(ctx)
+		require.NoError(t, err)
 	}()
 
 	t.Log("event store with default namespace")
-	test.AcceptanceTest(t, context.Background(), store)
+	test.AcceptanceTest(t, ctx, store)
 }

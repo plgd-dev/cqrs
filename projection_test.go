@@ -17,7 +17,7 @@ import (
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProjection(t *testing.T) {
@@ -39,33 +39,36 @@ func TestProjection(t *testing.T) {
 		[]string{broker},
 		config,
 		json.Marshal)
-	assert.NoError(t, err)
-	assert.NotNil(t, publisher)
+	require.NoError(t, err)
+	require.NotNil(t, publisher)
 
 	subscriber, err := kafka.NewSubscriber(
 		[]string{broker},
 		config,
 		json.Unmarshal,
 		func(f func()) error { go f(); return nil },
-		func(err error) { assert.NoError(t, err) },
+		func(err error) { require.NoError(t, err) },
 	)
-	assert.NoError(t, err)
-	assert.NotNil(t, subscriber)
+	require.NoError(t, err)
+	require.NotNil(t, subscriber)
 
 	// Local Mongo testing with Docker
-	url := os.Getenv("MONGO_HOST")
+	host := os.Getenv("MONGO_HOST")
 
-	if url == "" {
+	if host == "" {
 		// Default to localhost
-		url = "localhost:27017"
+		host = "localhost:27017"
 	}
 
 	pool, err := ants.NewPool(16)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer pool.Release()
 
+	ctx := context.Background()
+
 	store, err := mongodb.NewEventStore(
-		url,
+		ctx,
+		host,
 		"test_projection",
 		"pbRA",
 		128,
@@ -82,15 +85,13 @@ func TestProjection(t *testing.T) {
 			return fmt.Errorf("marshal is not supported by %T", v)
 		}, nil)
 	/*bson.Marshal, bson.Unmarshal*/
-	assert.NoError(t, err)
-	assert.NotNil(t, store)
+	require.NoError(t, err)
+	require.NotNil(t, store)
 
-	ctx := context.Background()
-
-	defer store.Close()
+	defer store.Close(ctx)
 	defer func() {
 		err = store.Clear(ctx)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
 
 	type Path struct {
@@ -156,11 +157,11 @@ func TestProjection(t *testing.T) {
 	a1, err := NewAggregate(path1.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
 	}, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	evs, err := a1.HandleCommand(ctx, commandPub1)
-	assert.NoError(t, err)
-	assert.NotNil(t, evs)
+	require.NoError(t, err)
+	require.NotNil(t, evs)
 
 	snapshotEventType := func() string {
 		s := &ResourceStateSnapshotTaken{}
@@ -170,14 +171,14 @@ func TestProjection(t *testing.T) {
 	a2, err := NewAggregate(path2.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
 	}, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	evs, err = a2.HandleCommand(ctx, commandPub2)
-	assert.NoError(t, err)
-	assert.NotNil(t, evs)
+	require.NoError(t, err)
+	require.NotNil(t, evs)
 
 	projection, err := NewProjection(ctx, store, "testProjection", subscriber, func(context.Context) (eventstore.Model, error) { return &mockEventHandler{}, nil }, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = projection.Project(ctx, []eventstore.SnapshotQuery{
 		eventstore.SnapshotQuery{
@@ -186,8 +187,8 @@ func TestProjection(t *testing.T) {
 			SnapshotEventType: snapshotEventType(),
 		},
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(projection.Models(nil)))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(projection.Models(nil)))
 
 	err = projection.Project(ctx, []eventstore.SnapshotQuery{
 		eventstore.SnapshotQuery{
@@ -196,39 +197,39 @@ func TestProjection(t *testing.T) {
 			SnapshotEventType: snapshotEventType(),
 		},
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, 2, len(projection.Models(nil)))
+	require.NoError(t, err)
+	require.Equal(t, 2, len(projection.Models(nil)))
 
 	err = projection.SubscribeTo(topics)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	time.Sleep(waitForSubscription)
 
 	a3, err := NewAggregate(path3.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
 		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
 	}, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	evs, err = a3.HandleCommand(ctx, commandPub3)
-	assert.NoError(t, err)
-	assert.NotNil(t, evs)
+	require.NoError(t, err)
+	require.NotNil(t, evs)
 	for _, e := range evs {
 		err = publisher.Publish(ctx, topics, path3.GroupId, path3.AggregateId, e)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
-	assert.Equal(t, 3, len(projection.Models(nil)))
+	require.Equal(t, 3, len(projection.Models(nil)))
 
 	evs, err = a1.HandleCommand(ctx, commandUnpub1)
-	assert.NoError(t, err)
-	assert.NotNil(t, evs)
+	require.NoError(t, err)
+	require.NotNil(t, evs)
 	for _, e := range evs {
 		err = publisher.Publish(ctx, topics, path3.GroupId, path3.AggregateId, e)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	err = projection.SubscribeTo(topics[0:1])
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	time.Sleep(waitForSubscription)
 
@@ -239,35 +240,35 @@ func TestProjection(t *testing.T) {
 			SnapshotEventType: snapshotEventType(),
 		},
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	evs, err = a3.HandleCommand(ctx, commandUnpub3)
-	assert.NoError(t, err)
-	assert.NotNil(t, evs)
+	require.NoError(t, err)
+	require.NotNil(t, evs)
 	for _, e := range evs {
 		err = publisher.Publish(ctx, topics[1:], path3.GroupId, path3.AggregateId, e)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	time.Sleep(time.Second)
 	projection.lock.Lock()
-	assert.Equal(t, 2, len(projection.Models(nil)))
+	require.Equal(t, 2, len(projection.Models(nil)))
 	projection.lock.Unlock()
 
 	err = projection.SubscribeTo(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	time.Sleep(waitForSubscription)
 
 	evs, err = a1.HandleCommand(ctx, commandPub1)
-	assert.NoError(t, err)
-	assert.NotNil(t, evs)
+	require.NoError(t, err)
+	require.NotNil(t, evs)
 	for _, e := range evs {
 		err = publisher.Publish(ctx, topics, path1.GroupId, path1.AggregateId, e)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	projection.lock.Lock()
-	assert.Equal(t, 2, len(projection.Models(nil)))
+	require.Equal(t, 2, len(projection.Models(nil)))
 	projection.lock.Unlock()
 }
