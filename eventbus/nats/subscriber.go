@@ -34,6 +34,13 @@ type Observer struct {
 
 // NewSubscriber creates a subscriber.
 func NewSubscriber(url string, eventUnmarshaler event.UnmarshalerFunc, goroutinePoolGo eventbus.GoroutinePoolGoFunc, errFunc eventbus.ErrFunc, options ...nats.Option) (*Subscriber, error) {
+	if eventUnmarshaler == nil {
+		return nil, fmt.Errorf("invalid eventUnmarshaler")
+	}
+	if errFunc == nil {
+		return nil, fmt.Errorf("invalid errFunc")
+	}
+
 	conn, err := nats.Connect(url, options...)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create client: %v", err)
@@ -71,6 +78,7 @@ func (b *Subscriber) newObservation(ctx context.Context, subscriptionId string, 
 		subscriptionId:  subscriptionId,
 		subs:            make(map[string]*nats.Subscription),
 		eventHandler:    eh,
+		errFunc:         b.errFunc,
 	}
 }
 
