@@ -138,6 +138,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 			if i.RewindIgnore(ctx, e) {
 				return true
 			}
+			return false
 		}
 		*e = *tmp
 		return true
