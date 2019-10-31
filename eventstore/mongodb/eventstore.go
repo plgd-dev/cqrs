@@ -48,6 +48,13 @@ var eventsQueryAggregateIdIndex = bson.D{
 	{aggregateIdKey, 1},
 }
 
+type signOperator string
+
+const (
+	signOperator_gte signOperator = "$gte"
+	signOperator_lt  signOperator = "$lt"
+)
+
 type LogDebugfFunc func(fmt string, args ...interface{})
 
 // EventStore implements an EventStore for MongoDB.
@@ -309,7 +316,7 @@ func (i *iterator) Err() error {
 	return i.iter.Err()
 }
 
-func queriesFromVersionToMgoQuery(queries []eventstore.VersionQuery) (bson.M, error) {
+func versionQueriesToMgoQuery(queries []eventstore.VersionQuery, op signOperator) (bson.M, error) {
 	orQueries := make([]bson.M, 0, 32)
 
 	if len(queries) == 0 {
@@ -320,13 +327,17 @@ func queriesFromVersionToMgoQuery(queries []eventstore.VersionQuery) (bson.M, er
 		if q.AggregateId == "" {
 			return bson.M{}, fmt.Errorf("invalid VersionQuery.AggregateId")
 		}
-		andQueries := make([]bson.M, 0, 2)
-		andQueries = append(andQueries, bson.M{versionKey: bson.M{"$gte": q.Version}})
-		andQueries = append(andQueries, bson.M{aggregateIdKey: q.AggregateId})
-		orQueries = append(orQueries, bson.M{"$and": andQueries})
+		orQueries = append(orQueries, versionQueryToMgoQuery(q, op))
 	}
 
 	return bson.M{"$or": orQueries}, nil
+}
+
+func versionQueryToMgoQuery(query eventstore.VersionQuery, op signOperator) bson.M {
+	andQueries := make([]bson.M, 0, 2)
+	andQueries = append(andQueries, bson.M{versionKey: bson.M{string(op): query.Version}})
+	andQueries = append(andQueries, bson.M{aggregateIdKey: query.AggregateId})
+	return bson.M{"$and": andQueries}
 }
 
 type loader struct {
@@ -415,6 +426,22 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 	return nil
 }
 
+// LoadUpToVersion loads aggragates events up to a specific version.
+func (s *EventStore) LoadUpToVersion(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler) error {
+	s.LogDebugfFunc("mongodb.Eventstore.LoadUpToVersion start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Eventstore.LoadUpToVersion takes %v", time.Since(t))
+	}()
+
+	q, err := versionQueriesToMgoQuery(queries, signOperator_lt)
+	if err != nil {
+		return fmt.Errorf("cannot load events up to version: %v", err)
+	}
+
+	return s.loadMgoQuery(ctx, eh, q)
+}
+
 // LoadFromVersion loads aggragates events from version.
 func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler) error {
 	s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion start")
@@ -423,13 +450,18 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.V
 		s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion takes %v", time.Since(t))
 	}()
 
-	q, err := queriesFromVersionToMgoQuery(queries)
+	q, err := versionQueriesToMgoQuery(queries, signOperator_gte)
 	if err != nil {
 		return fmt.Errorf("cannot load events from version: %v", err)
 	}
+
+	return s.loadMgoQuery(ctx, eh, q)
+}
+
+func (s *EventStore) loadMgoQuery(ctx context.Context, eh event.Handler, mgoQuery bson.M) error {
 	opts := options.FindOptions{}
 	opts.SetHint(eventsQueryAggregateIdIndex)
-	iter, err := s.client.Database(s.DBName()).Collection(eventCName).Find(ctx, q, &opts)
+	iter, err := s.client.Database(s.DBName()).Collection(eventCName).Find(ctx, mgoQuery, &opts)
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
@@ -656,4 +688,8 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 		return errClose
 	}
 	return err
+}
+
+func (s *EventStore) RemoveUpToVersion(ctx context.Context, queries []eventstore.VersionQuery) error {
+	return nil
 }
