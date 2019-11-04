@@ -135,6 +135,11 @@ func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix
 	if err != nil {
 		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
 	}
+	colAv := s.client.Database(s.DBName()).Collection(aggregateVersionsCName)
+	err = ensureIndex(ctx, colAv)
+	if err != nil {
+		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
+	}
 
 	return s, nil
 }
@@ -691,5 +696,14 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 }
 
 func (s *EventStore) RemoveUpToVersion(ctx context.Context, queries []eventstore.VersionQuery) error {
+	deleteMgoQuery, err := versionQueriesToMgoQuery(queries, signOperator_lt)
+	if err != nil {
+		return fmt.Errorf("cannot remove events up to version: %v", err)
+	}
+
+	_, err = s.client.Database(s.DBName()).Collection(eventCName).DeleteMany(ctx, deleteMgoQuery)
+	if err != nil {
+		return err
+	}
 	return nil
 }

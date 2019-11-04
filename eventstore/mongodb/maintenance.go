@@ -31,6 +31,7 @@ func makeDbAggregateVersion(aggregateID string, version uint64) (dbAggregateVers
 	}, nil
 }
 
+// Insert stores (or updates) the information about the latest snapshot version per aggregate into the DB
 func (s *EventStore) Insert(ctx context.Context, task eventstore.VersionQuery) error {
 	record, err := makeDbAggregateVersion(task.AggregateId, task.Version)
 	if err != nil {
@@ -92,14 +93,11 @@ func (i *dbAggregateVersionIterator) Err() error {
 	return i.iter.Err()
 }
 
+// Query retrieves the latest snapshot version per aggregate for thw number of aggregates specified by 'limit'
 func (s *EventStore) Query(ctx context.Context, limit int, taskHandler maintenance.TaskHandler) error {
-	// TODO Not looking for a particular aggregate id + version!
-	mgoQuery := versionQueryToMgoQuery(eventstore.VersionQuery{}, signOperator_gte)
-
-	// TODO create indexu ?
-	// opts := options.FindOptions{}
-	// opts.SetHint(eventsQueryAggregateIdIndex)
-	iter, err := s.client.Database(s.DBName()).Collection(aggregateVersionsCName).Find(ctx, mgoQuery)
+	opts := options.FindOptions{}
+	opts.SetLimit(int64(limit))
+	iter, err := s.client.Database(s.DBName()).Collection(aggregateVersionsCName).Find(ctx, nil, &opts)
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
@@ -107,10 +105,10 @@ func (s *EventStore) Query(ctx context.Context, limit int, taskHandler maintenan
 		return err
 	}
 
-	// i := dbAggregateVersionIterator{
-	// 	iter: iter,
-	// }
-	//	err = eh.Handle(ctx, &i)
+	i := dbAggregateVersionIterator{
+		iter: iter,
+	}
+	err = taskHandler.Handle(ctx, &i)
 
 	errClose := iter.Close(ctx)
 	if err == nil {
@@ -119,6 +117,7 @@ func (s *EventStore) Query(ctx context.Context, limit int, taskHandler maintenan
 	return err
 }
 
+// Remove deletes (the latest snapshot version) database record for a given aggregate ID
 func (s *EventStore) Remove(ctx context.Context, task eventstore.VersionQuery) error {
 	record, err := makeDbAggregateVersion(task.AggregateId, task.Version)
 	if err != nil {
