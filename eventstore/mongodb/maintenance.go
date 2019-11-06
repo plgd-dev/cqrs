@@ -8,46 +8,38 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/maintenance"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-const aggregateVersionsCName = "aggregateversions"
+const maintenanceCName = "maintenance"
 
-// dbEvent is the internal record for the MongoDB event store used to save and load
-// the latest versions per aggregate (snapshot follows right after this version) from the DB.
-type dbAggregateVersion struct {
-	AggregateID string `bson:"aggregateIdKey"`
-	ID          string `bson:"_id"`
-	Version     uint64 `bson:"versionKey"`
+func makeDbAggregateVersion(task maintenance.Task) bson.M {
+	return bson.M{
+		aggregateIdKey: task.AggregateID,
+		versionKey:     task.Version,
+		idKey:          getID(task),
+	}
 }
 
-func makeDbAggregateVersion(aggregateID string, version uint64) (dbAggregateVersion, error) {
-	return dbAggregateVersion{
-		AggregateID: aggregateID,
-		Version:     version,
-		ID:          aggregateID + "." + strconv.FormatUint(version, 10),
-	}, nil
+func getID(task maintenance.Task) string {
+	return task.AggregateID + "." + strconv.FormatUint(task.Version, 10)
 }
 
 // Insert stores (or updates) the information about the latest snapshot version per aggregate into the DB
-func (s *EventStore) Insert(ctx context.Context, task eventstore.VersionQuery) error {
-	record, err := makeDbAggregateVersion(task.AggregateId, task.Version)
-	if err != nil {
-		return err
-	}
+func (s *EventStore) Insert(ctx context.Context, task maintenance.Task) error {
+	record := makeDbAggregateVersion(task)
 
-	col := s.client.Database(s.DBName()).Collection(aggregateVersionsCName)
+	col := s.client.Database(s.DBName()).Collection(maintenanceCName)
 
 	opts := options.UpdateOptions{}
 	opts.SetUpsert(true)
 
 	res, err := col.UpdateOne(ctx,
 		bson.M{
-			"_id": record.ID,
+			idKey: getID(task),
 			versionKey: bson.M{
-				"$lt": record.Version,
+				"$lt": task.Version,
 			},
 		},
 		bson.M{
@@ -60,10 +52,10 @@ func (s *EventStore) Insert(ctx context.Context, task eventstore.VersionQuery) e
 			// someone has already updated the store with a newer version
 			return nil
 		}
-		return fmt.Errorf("db maintenance - could not upsert record with aggregate ID %v, version %d - %v", task.AggregateId, task.Version, err)
+		return fmt.Errorf("db maintenance - could not upsert record with aggregate ID %v, version %d - %v", task.AggregateID, task.Version, err)
 	}
 	if res.UpsertedCount != 1 {
-		return fmt.Errorf("db maintenance - could not upsert record with aggregate ID %v, version %d", task.AggregateId, task.Version)
+		return fmt.Errorf("db maintenance - could not upsert record with aggregate ID %v, version %d", task.AggregateID, task.Version)
 	}
 	return nil
 }
@@ -72,8 +64,8 @@ type dbAggregateVersionIterator struct {
 	iter *mongo.Cursor
 }
 
-func (i *dbAggregateVersionIterator) Next(ctx context.Context, task *eventstore.VersionQuery) bool {
-	var dbRecord dbAggregateVersion
+func (i *dbAggregateVersionIterator) Next(ctx context.Context, task *maintenance.Task) bool {
+	var dbRecord bson.M
 
 	if !i.iter.Next(ctx) {
 		return false
@@ -84,8 +76,8 @@ func (i *dbAggregateVersionIterator) Next(ctx context.Context, task *eventstore.
 		return false
 	}
 
-	task.AggregateId = dbRecord.AggregateID
-	task.Version = dbRecord.Version
+	task.AggregateID = dbRecord[aggregateIdKey].(string)
+	task.Version = dbRecord[versionKey].(uint64)
 	return true
 }
 
@@ -97,7 +89,7 @@ func (i *dbAggregateVersionIterator) Err() error {
 func (s *EventStore) Query(ctx context.Context, limit int, taskHandler maintenance.TaskHandler) error {
 	opts := options.FindOptions{}
 	opts.SetLimit(int64(limit))
-	iter, err := s.client.Database(s.DBName()).Collection(aggregateVersionsCName).Find(ctx, nil, &opts)
+	iter, err := s.client.Database(s.DBName()).Collection(maintenanceCName).Find(ctx, nil, &opts)
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
@@ -118,20 +110,17 @@ func (s *EventStore) Query(ctx context.Context, limit int, taskHandler maintenan
 }
 
 // Remove deletes (the latest snapshot version) database record for a given aggregate ID
-func (s *EventStore) Remove(ctx context.Context, task eventstore.VersionQuery) error {
-	record, err := makeDbAggregateVersion(task.AggregateId, task.Version)
-	if err != nil {
-		return err
-	}
+func (s *EventStore) Remove(ctx context.Context, task maintenance.Task) error {
+	record := makeDbAggregateVersion(task)
 
-	col := s.client.Database(s.DBName()).Collection(aggregateVersionsCName)
+	col := s.client.Database(s.DBName()).Collection(maintenanceCName)
 
 	res, err := col.DeleteOne(ctx, record)
 	if err != nil {
 		return err
 	}
 	if res.DeletedCount != 1 {
-		return fmt.Errorf("db maintenance - could not remove record with given aggregate ID %s and/or version %d", task.AggregateId, task.Version)
+		return fmt.Errorf("db maintenance - could not remove record with given aggregate ID %s and/or version %d", task.AggregateID, task.Version)
 	}
 
 	return nil

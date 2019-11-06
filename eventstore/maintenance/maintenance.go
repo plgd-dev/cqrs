@@ -2,14 +2,17 @@ package maintenance
 
 import (
 	"context"
-
-	"github.com/go-ocf/cqrs/eventstore"
 )
 
 type MaintenanceEventStore interface {
-	Insert(ctx context.Context, task eventstore.VersionQuery) error
+	Insert(ctx context.Context, task Task) error
 	Query(ctx context.Context, limit int, taskHandler TaskHandler) error
-	Remove(ctx context.Context, task eventstore.VersionQuery) error
+	Remove(ctx context.Context, task Task) error
+}
+
+type Task struct {
+	AggregateID string
+	Version     uint64
 }
 
 type TaskHandler interface {
@@ -18,6 +21,6 @@ type TaskHandler interface {
 
 //Iter provides iterator over maintenance db records
 type Iter interface {
-	Next(ctx context.Context, task *eventstore.VersionQuery) bool
+	Next(ctx context.Context, task *Task) bool
 	Err() error
 }

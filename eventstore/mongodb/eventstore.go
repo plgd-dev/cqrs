@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -23,7 +25,10 @@ const snapshotCName = "snapshots"
 
 const aggregateIdKey = "aggregateid"
 const groupIdKey = "groupid"
+const idKey = "_id"
 const versionKey = "version"
+const dataKey = "data"
+const eventTypeKey = "eventtype"
 
 var snapshotsQueryIndex = bson.D{
 	{groupIdKey, 1},
@@ -135,10 +140,10 @@ func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix
 	if err != nil {
 		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
 	}
-	colAv := s.client.Database(s.DBName()).Collection(aggregateVersionsCName)
+	colAv := s.client.Database(s.DBName()).Collection(maintenanceCName)
 	err = ensureIndex(ctx, colAv)
 	if err != nil {
-		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
+		return nil, fmt.Errorf("cannot save maintenance query: %v", err)
 	}
 
 	return s, nil
@@ -293,7 +298,7 @@ type iterator struct {
 }
 
 func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
-	var event dbEvent
+	var event bson.M
 
 	if !i.iter.Next(ctx) {
 		return false
@@ -304,15 +309,16 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		return false
 	}
 
-	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
+	version := event[versionKey].(int64)
+	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event[groupIdKey].(string), event[aggregateIdKey].(string), version, event[eventTypeKey].(string))
 
-	e.Version = event.Version
-	e.AggregateId = event.AggregateId
-	e.EventType = event.EventType
-	e.GroupId = event.GroupId
-	data := event.Data
+	e.Version = uint64(version)
+	e.AggregateId = event[aggregateIdKey].(string)
+	e.EventType = event[eventTypeKey].(string)
+	e.GroupId = event[groupIdKey].(string)
+	data := event[dataKey].(primitive.Binary)
 	e.Unmarshal = func(v interface{}) error {
-		return i.dataUnmarshaler(data, v)
+		return i.dataUnmarshaler(data.Data, v)
 	}
 	return true
 }
@@ -530,49 +536,31 @@ func (s *EventStore) Close(ctx context.Context) error {
 	return s.client.Disconnect(ctx)
 }
 
-// dbEvent is the internal event record for the MongoDB event store used
-// to save and load events from the DB.
-type dbEvent struct {
-	Data        []byte `bson:"data,omitempty"`
-	AggregateId string `bson:aggregateIdKey`
-	Id          string `bson:"_id"`
-	Version     uint64 `bson:versionKey`
-	EventType   string `bson:"eventtype"`
-	GroupId     string `bson:groupIdKey`
-}
-
 // newDBEvent returns a new dbEvent for an event.
-func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event.MarshalerFunc) (dbEvent, error) {
+func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event.MarshalerFunc) (bson.M, error) {
 	// Marshal event data if there is any.
 	raw, err := marshaler(event)
 	if err != nil {
-		return dbEvent{}, fmt.Errorf("cannot create db event: %v", err)
+		return bson.M{}, fmt.Errorf("cannot create db event: %v", err)
 	}
 
-	return dbEvent{
-		Data:        raw,
-		AggregateId: aggregateId,
-		Version:     event.Version(),
-		EventType:   event.EventType(),
-		GroupId:     groupId,
-		Id:          groupId + "." + aggregateId + "." + strconv.FormatUint(event.Version(), 10),
+	return bson.M{
+		aggregateIdKey: aggregateId,
+		groupIdKey:     groupId,
+		versionKey:     event.Version(),
+		dataKey:        raw,
+		eventTypeKey:   event.EventType(),
+		idKey:          groupId + "." + aggregateId + "." + strconv.FormatUint(event.Version(), 10),
 	}, nil
 }
 
-type dbSnapshot struct {
-	Id          string `bson:"_id"`
-	GroupId     string `bson:groupIdKey`
-	AggregateId string `bson:aggregateIdKey`
-	Version     uint64 `bson:versionKey`
-}
-
 // newDBEvent returns a new dbEvent for an event.
-func makeDBSnapshot(groupId, aggregateId string, version uint64) dbSnapshot {
-	return dbSnapshot{
-		Id:          groupId + "." + aggregateId,
-		GroupId:     groupId,
-		AggregateId: aggregateId,
-		Version:     version,
+func makeDBSnapshot(groupId, aggregateId string, version uint64) bson.M {
+	return bson.M{
+		idKey:          groupId + "." + aggregateId,
+		groupIdKey:     groupId,
+		aggregateIdKey: aggregateId,
+		versionKey:     version,
 	}
 }
 
@@ -606,9 +594,9 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 
 	if _, err = col.UpdateOne(ctx,
 		bson.M{
-			"_id": sbSnap.Id,
+			idKey: sbSnap[idKey].(string),
 			versionKey: bson.M{
-				"$lt": sbSnap.Version,
+				"$lt": sbSnap[versionKey].(uint64),
 			},
 		},
 		bson.M{
@@ -649,7 +637,7 @@ type queryIterator struct {
 }
 
 func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bool {
-	var query dbSnapshot
+	var query bson.M
 
 	if !i.iter.Next(ctx) {
 		return false
@@ -660,8 +648,9 @@ func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bo
 		return false
 	}
 
-	q.Version = query.Version
-	q.AggregateId = query.AggregateId
+	version := query[versionKey].(int64)
+	q.Version = uint64(version)
+	q.AggregateId = query[aggregateIdKey].(string)
 	return true
 }
 
