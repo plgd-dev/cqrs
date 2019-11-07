@@ -537,7 +537,7 @@ func (s *EventStore) Close(ctx context.Context) error {
 }
 
 // newDBEvent returns a new dbEvent for an event.
-func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event.MarshalerFunc) (bson.M, error) {
+func makeDBEvent(groupID, aggregateID string, event event.Event, marshaler event.MarshalerFunc) (bson.M, error) {
 	// Marshal event data if there is any.
 	raw, err := marshaler(event)
 	if err != nil {
@@ -545,37 +545,37 @@ func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event
 	}
 
 	return bson.M{
-		aggregateIdKey: aggregateId,
-		groupIdKey:     groupId,
+		aggregateIdKey: aggregateID,
+		groupIdKey:     groupID,
 		versionKey:     event.Version(),
 		dataKey:        raw,
 		eventTypeKey:   event.EventType(),
-		idKey:          groupId + "." + aggregateId + "." + strconv.FormatUint(event.Version(), 10),
+		idKey:          groupID + "." + aggregateID + "." + strconv.FormatUint(event.Version(), 10),
 	}, nil
 }
 
 // newDBEvent returns a new dbEvent for an event.
-func makeDBSnapshot(groupId, aggregateId string, version uint64) bson.M {
+func makeDBSnapshot(groupID, aggregateID string, version uint64) bson.M {
 	return bson.M{
-		idKey:          groupId + "." + aggregateId,
-		groupIdKey:     groupId,
-		aggregateIdKey: aggregateId,
+		idKey:          groupID + "." + aggregateID,
+		groupIdKey:     groupID,
+		aggregateIdKey: aggregateID,
 		versionKey:     version,
 	}
 }
 
-func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId string, version uint64) (concurrencyException bool, err error) {
+func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateID string, version uint64) (concurrencyException bool, err error) {
 	s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery start")
 	t := time.Now()
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery takes %v", time.Since(t))
 	}()
 
-	if aggregateId == "" {
-		return false, fmt.Errorf("cannot save snapshot query: invalid query.AggregateId")
+	if aggregateID == "" {
+		return false, fmt.Errorf("cannot save snapshot query: invalid query.aggregateID")
 	}
 
-	sbSnap := makeDBSnapshot(groupId, aggregateId, version)
+	sbSnap := makeDBSnapshot(groupId, aggregateID, version)
 	col := s.client.Database(s.DBName()).Collection(snapshotCName)
 	/*
 		err = ensureIndex(ctx, col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
@@ -684,6 +684,7 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 	return err
 }
 
+// RemoveUpToVersion deletes the aggragates events up to a specific version.
 func (s *EventStore) RemoveUpToVersion(ctx context.Context, queries []eventstore.VersionQuery) error {
 	deleteMgoQuery, err := versionQueriesToMgoQuery(queries, signOperator_lt)
 	if err != nil {
