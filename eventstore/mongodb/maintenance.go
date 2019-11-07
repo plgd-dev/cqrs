@@ -2,8 +2,8 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strconv"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -23,11 +23,15 @@ func makeDbAggregateVersion(task maintenance.Task) bson.M {
 }
 
 func getID(task maintenance.Task) string {
-	return task.AggregateID + "." + strconv.FormatUint(task.Version, 10)
+	return task.AggregateID
 }
 
 // Insert stores (or updates) the information about the latest snapshot version per aggregate into the DB
 func (s *EventStore) Insert(ctx context.Context, task maintenance.Task) error {
+	if task.AggregateID == "" || task.Version < 0 {
+		return errors.New("could not insert record - aggregate ID and/or version cannot be empty")
+	}
+
 	record := makeDbAggregateVersion(task)
 
 	col := s.client.Database(s.DBName()).Collection(maintenanceCName)
@@ -49,13 +53,13 @@ func (s *EventStore) Insert(ctx context.Context, task maintenance.Task) error {
 	)
 	if err != nil {
 		if err == mongo.ErrNilDocument || IsDup(err) {
-			// someone has already updated the store with a newer version
-			return nil
+			return fmt.Errorf("could not insert record with aggregate ID %v, version %d - version is outdated - %v", task.AggregateID, task.Version, err)
 		}
-		return fmt.Errorf("db maintenance - could not upsert record with aggregate ID %v, version %d - %v", task.AggregateID, task.Version, err)
+		return fmt.Errorf("could not insert record with aggregate ID %v, version %d - %v", task.AggregateID, task.Version, err)
 	}
-	if res.UpsertedCount != 1 {
-		return fmt.Errorf("db maintenance - could not upsert record with aggregate ID %v, version %d", task.AggregateID, task.Version)
+
+	if res.UpsertedCount != 1 && res.ModifiedCount != 1 {
+		return fmt.Errorf("could not insert record with aggregate ID %v, version %d", task.AggregateID, task.Version)
 	}
 	return nil
 }
@@ -77,7 +81,8 @@ func (i *dbAggregateVersionIterator) Next(ctx context.Context, task *maintenance
 	}
 
 	task.AggregateID = dbRecord[aggregateIdKey].(string)
-	task.Version = dbRecord[versionKey].(uint64)
+	version := dbRecord[versionKey].(int64)
+	task.Version = uint64(version)
 	return true
 }
 
@@ -89,7 +94,7 @@ func (i *dbAggregateVersionIterator) Err() error {
 func (s *EventStore) Query(ctx context.Context, limit int, taskHandler maintenance.TaskHandler) error {
 	opts := options.FindOptions{}
 	opts.SetLimit(int64(limit))
-	iter, err := s.client.Database(s.DBName()).Collection(maintenanceCName).Find(ctx, nil, &opts)
+	iter, err := s.client.Database(s.DBName()).Collection(maintenanceCName).Find(ctx, bson.M{}, &opts)
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
@@ -120,7 +125,7 @@ func (s *EventStore) Remove(ctx context.Context, task maintenance.Task) error {
 		return err
 	}
 	if res.DeletedCount != 1 {
-		return fmt.Errorf("db maintenance - could not remove record with given aggregate ID %s and/or version %d", task.AggregateID, task.Version)
+		return fmt.Errorf("could not remove record with aggregate ID %s and/or version %d", task.AggregateID, task.Version)
 	}
 
 	return nil
