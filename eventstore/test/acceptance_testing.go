@@ -265,6 +265,38 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 		eventsToSave[0],
 	}, eh6.events[aggregateID3Path.GroupId][aggregateID3Path.AggregateId])
 
+	t.Log("load events up to version")
+	eh7 := NewMockEventHandler()
+	err = store.LoadUpToVersion(ctx, []eventstore.VersionQuery{
+		{
+			AggregateId: aggregateID1Path.AggregateId,
+			Version:     eventsToSave[5].Version(),
+		},
+	}, eh7)
+	require.NoError(t, err)
+	require.Equal(t, eventsToSave[0:5], eh7.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
+
+	t.Log("load events up to version")
+	eh8 := NewMockEventHandler()
+	err = store.LoadUpToVersion(ctx, []eventstore.VersionQuery{
+		{
+			AggregateId: aggregateID1Path.AggregateId,
+			Version:     eventsToSave[0].Version(),
+		},
+	}, eh8)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(eh8.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId]))
+
+	t.Log("load events up to version without version specified")
+	eh9 := NewMockEventHandler()
+	err = store.LoadUpToVersion(ctx, []eventstore.VersionQuery{
+		{
+			AggregateId: aggregateID1Path.AggregateId,
+		},
+	}, eh9)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(eh9.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId]))
+
 	t.Log("test projection all")
 	model := NewMockEventHandler()
 	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return model, nil }, nil)
@@ -308,4 +340,22 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 		eventsToSave[0], eventsToSave[6], eventsToSave[7], eventsToSave[8],
 	}, model2.events[aggregateID2Path.GroupId][aggregateID2Path.AggregateId])
 
+	t.Log("remove events up to version")
+	versionToRemove := 3
+	err = store.RemoveUpToVersion(ctx, []eventstore.VersionQuery{
+		{
+			AggregateId: aggregateID1Path.AggregateId,
+			Version:     eventsToSave[versionToRemove].Version(),
+		},
+	})
+	require.NoError(t, err)
+
+	eh10 := NewMockEventHandler()
+	err = store.LoadFromVersion(ctx, []eventstore.VersionQuery{
+		{
+			AggregateId: aggregateID1Path.AggregateId,
+		},
+	}, eh10)
+	require.NoError(t, err)
+	require.Equal(t, eventsToSave[versionToRemove:6], eh10.events[aggregateID1Path.GroupId][aggregateID1Path.AggregateId])
 }

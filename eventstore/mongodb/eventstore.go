@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -23,7 +25,10 @@ const snapshotCName = "snapshots"
 
 const aggregateIdKey = "aggregateid"
 const groupIdKey = "groupid"
+const idKey = "_id"
 const versionKey = "version"
+const dataKey = "data"
+const eventTypeKey = "eventtype"
 
 var snapshotsQueryIndex = bson.D{
 	{groupIdKey, 1},
@@ -47,6 +52,13 @@ var eventsQueryAggregateIdIndex = bson.D{
 	{versionKey, 1},
 	{aggregateIdKey, 1},
 }
+
+type signOperator string
+
+const (
+	signOperator_gte signOperator = "$gte"
+	signOperator_lt  signOperator = "$lt"
+)
 
 type LogDebugfFunc func(fmt string, args ...interface{})
 
@@ -127,6 +139,11 @@ func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix
 	err = ensureIndex(ctx, colSn, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
 	if err != nil {
 		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
+	}
+	colAv := s.client.Database(s.DBName()).Collection(maintenanceCName)
+	err = ensureIndex(ctx, colAv)
+	if err != nil {
+		return nil, fmt.Errorf("cannot save maintenance query: %v", err)
 	}
 
 	return s, nil
@@ -281,7 +298,7 @@ type iterator struct {
 }
 
 func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
-	var event dbEvent
+	var event bson.M
 
 	if !i.iter.Next(ctx) {
 		return false
@@ -292,15 +309,16 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		return false
 	}
 
-	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event.GroupId, event.AggregateId, event.Version, event.EventType)
+	version := event[versionKey].(int64)
+	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event[groupIdKey].(string), event[aggregateIdKey].(string), version, event[eventTypeKey].(string))
 
-	e.Version = event.Version
-	e.AggregateId = event.AggregateId
-	e.EventType = event.EventType
-	e.GroupId = event.GroupId
-	data := event.Data
+	e.Version = uint64(version)
+	e.AggregateId = event[aggregateIdKey].(string)
+	e.EventType = event[eventTypeKey].(string)
+	e.GroupId = event[groupIdKey].(string)
+	data := event[dataKey].(primitive.Binary)
 	e.Unmarshal = func(v interface{}) error {
-		return i.dataUnmarshaler(data, v)
+		return i.dataUnmarshaler(data.Data, v)
 	}
 	return true
 }
@@ -309,7 +327,7 @@ func (i *iterator) Err() error {
 	return i.iter.Err()
 }
 
-func queriesFromVersionToMgoQuery(queries []eventstore.VersionQuery) (bson.M, error) {
+func versionQueriesToMgoQuery(queries []eventstore.VersionQuery, op signOperator) (bson.M, error) {
 	orQueries := make([]bson.M, 0, 32)
 
 	if len(queries) == 0 {
@@ -320,13 +338,17 @@ func queriesFromVersionToMgoQuery(queries []eventstore.VersionQuery) (bson.M, er
 		if q.AggregateId == "" {
 			return bson.M{}, fmt.Errorf("invalid VersionQuery.AggregateId")
 		}
-		andQueries := make([]bson.M, 0, 2)
-		andQueries = append(andQueries, bson.M{versionKey: bson.M{"$gte": q.Version}})
-		andQueries = append(andQueries, bson.M{aggregateIdKey: q.AggregateId})
-		orQueries = append(orQueries, bson.M{"$and": andQueries})
+		orQueries = append(orQueries, versionQueryToMgoQuery(q, op))
 	}
 
 	return bson.M{"$or": orQueries}, nil
+}
+
+func versionQueryToMgoQuery(query eventstore.VersionQuery, op signOperator) bson.M {
+	andQueries := make([]bson.M, 0, 2)
+	andQueries = append(andQueries, bson.M{versionKey: bson.M{string(op): query.Version}})
+	andQueries = append(andQueries, bson.M{aggregateIdKey: query.AggregateId})
+	return bson.M{"$and": andQueries}
 }
 
 type loader struct {
@@ -415,6 +437,22 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 	return nil
 }
 
+// LoadUpToVersion loads aggragates events up to a specific version.
+func (s *EventStore) LoadUpToVersion(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler) error {
+	s.LogDebugfFunc("mongodb.Eventstore.LoadUpToVersion start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Eventstore.LoadUpToVersion takes %v", time.Since(t))
+	}()
+
+	q, err := versionQueriesToMgoQuery(queries, signOperator_lt)
+	if err != nil {
+		return fmt.Errorf("cannot load events up to version: %v", err)
+	}
+
+	return s.loadMgoQuery(ctx, eh, q)
+}
+
 // LoadFromVersion loads aggragates events from version.
 func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler) error {
 	s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion start")
@@ -423,13 +461,18 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.V
 		s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion takes %v", time.Since(t))
 	}()
 
-	q, err := queriesFromVersionToMgoQuery(queries)
+	q, err := versionQueriesToMgoQuery(queries, signOperator_gte)
 	if err != nil {
 		return fmt.Errorf("cannot load events from version: %v", err)
 	}
+
+	return s.loadMgoQuery(ctx, eh, q)
+}
+
+func (s *EventStore) loadMgoQuery(ctx context.Context, eh event.Handler, mgoQuery bson.M) error {
 	opts := options.FindOptions{}
 	opts.SetHint(eventsQueryAggregateIdIndex)
-	iter, err := s.client.Database(s.DBName()).Collection(eventCName).Find(ctx, q, &opts)
+	iter, err := s.client.Database(s.DBName()).Collection(eventCName).Find(ctx, mgoQuery, &opts)
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
@@ -493,64 +536,47 @@ func (s *EventStore) Close(ctx context.Context) error {
 	return s.client.Disconnect(ctx)
 }
 
-// dbEvent is the internal event record for the MongoDB event store used
-// to save and load events from the DB.
-type dbEvent struct {
-	Data        []byte `bson:"data,omitempty"`
-	AggregateId string `bson:aggregateIdKey`
-	Id          string `bson:"_id"`
-	Version     uint64 `bson:versionKey`
-	EventType   string `bson:"eventtype"`
-	GroupId     string `bson:groupIdKey`
-}
-
 // newDBEvent returns a new dbEvent for an event.
-func makeDBEvent(groupId, aggregateId string, event event.Event, marshaler event.MarshalerFunc) (dbEvent, error) {
+func makeDBEvent(groupID, aggregateID string, event event.Event, marshaler event.MarshalerFunc) (bson.M, error) {
 	// Marshal event data if there is any.
 	raw, err := marshaler(event)
 	if err != nil {
-		return dbEvent{}, fmt.Errorf("cannot create db event: %v", err)
+		return bson.M{}, fmt.Errorf("cannot create db event: %v", err)
 	}
 
-	return dbEvent{
-		Data:        raw,
-		AggregateId: aggregateId,
-		Version:     event.Version(),
-		EventType:   event.EventType(),
-		GroupId:     groupId,
-		Id:          groupId + "." + aggregateId + "." + strconv.FormatUint(event.Version(), 10),
+	return bson.M{
+		aggregateIdKey: aggregateID,
+		groupIdKey:     groupID,
+		versionKey:     event.Version(),
+		dataKey:        raw,
+		eventTypeKey:   event.EventType(),
+		idKey:          groupID + "." + aggregateID + "." + strconv.FormatUint(event.Version(), 10),
 	}, nil
 }
 
-type dbSnapshot struct {
-	Id          string `bson:"_id"`
-	GroupId     string `bson:groupIdKey`
-	AggregateId string `bson:aggregateIdKey`
-	Version     uint64 `bson:versionKey`
-}
-
 // newDBEvent returns a new dbEvent for an event.
-func makeDBSnapshot(groupId, aggregateId string, version uint64) dbSnapshot {
-	return dbSnapshot{
-		Id:          groupId + "." + aggregateId,
-		GroupId:     groupId,
-		AggregateId: aggregateId,
-		Version:     version,
+func makeDBSnapshot(groupID, aggregateID string, version uint64) bson.M {
+	return bson.M{
+		idKey:          groupID + "." + aggregateID,
+		groupIdKey:     groupID,
+		aggregateIdKey: aggregateID,
+		versionKey:     version,
 	}
 }
 
-func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId string, version uint64) (concurrencyException bool, err error) {
+// SaveSnapshotQuery upserts the snapshot record
+func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID string, version uint64) (concurrencyException bool, err error) {
 	s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery start")
 	t := time.Now()
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery takes %v", time.Since(t))
 	}()
 
-	if aggregateId == "" {
-		return false, fmt.Errorf("cannot save snapshot query: invalid query.AggregateId")
+	if aggregateID == "" {
+		return false, fmt.Errorf("cannot save snapshot query: invalid query.aggregateID")
 	}
 
-	sbSnap := makeDBSnapshot(groupId, aggregateId, version)
+	sbSnap := makeDBSnapshot(groupID, aggregateID, version)
 	col := s.client.Database(s.DBName()).Collection(snapshotCName)
 	/*
 		err = ensureIndex(ctx, col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
@@ -569,9 +595,9 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateId
 
 	if _, err = col.UpdateOne(ctx,
 		bson.M{
-			"_id": sbSnap.Id,
+			idKey: sbSnap[idKey].(string),
 			versionKey: bson.M{
-				"$lt": sbSnap.Version,
+				"$lt": sbSnap[versionKey].(uint64),
 			},
 		},
 		bson.M{
@@ -612,7 +638,7 @@ type queryIterator struct {
 }
 
 func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bool {
-	var query dbSnapshot
+	var query bson.M
 
 	if !i.iter.Next(ctx) {
 		return false
@@ -623,8 +649,9 @@ func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bo
 		return false
 	}
 
-	q.Version = query.Version
-	q.AggregateId = query.AggregateId
+	version := query[versionKey].(int64)
+	q.Version = uint64(version)
+	q.AggregateId = query[aggregateIdKey].(string)
 	return true
 }
 
@@ -656,4 +683,18 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 		return errClose
 	}
 	return err
+}
+
+// RemoveUpToVersion deletes the aggragates events up to a specific version.
+func (s *EventStore) RemoveUpToVersion(ctx context.Context, queries []eventstore.VersionQuery) error {
+	deleteMgoQuery, err := versionQueriesToMgoQuery(queries, signOperator_lt)
+	if err != nil {
+		return fmt.Errorf("cannot remove events up to version: %v", err)
+	}
+
+	_, err = s.client.Database(s.DBName()).Collection(eventCName).DeleteMany(ctx, deleteMgoQuery)
+	if err != nil {
+		return err
+	}
+	return nil
 }

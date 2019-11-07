@@ -24,8 +24,10 @@ type SnapshotQuery struct {
 type EventStore interface {
 	Save(ctx context.Context, groupId string, aggregateId string, events []event.Event) (concurrencyException bool, err error)
 	SaveSnapshot(ctx context.Context, groupId string, aggregateId string, event event.Event) (concurrencyException bool, err error)
+	LoadUpToVersion(ctx context.Context, queries []VersionQuery, eventHandler event.Handler) error
 	LoadFromVersion(ctx context.Context, queries []VersionQuery, eventHandler event.Handler) error
 	LoadFromSnapshot(ctx context.Context, queries []SnapshotQuery, eventHandler event.Handler) error
+	RemoveUpToVersion(ctx context.Context, queries []VersionQuery) error
 }
 
 // GoroutinePoolGoFunc processes actions via provided function
