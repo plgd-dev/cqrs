@@ -564,7 +564,8 @@ func makeDBSnapshot(groupID, aggregateID string, version uint64) bson.M {
 	}
 }
 
-func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateID string, version uint64) (concurrencyException bool, err error) {
+// SaveSnapshotQuery upserts the snapshot record
+func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID string, version uint64) (concurrencyException bool, err error) {
 	s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery start")
 	t := time.Now()
 	defer func() {
@@ -575,7 +576,7 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupId, aggregateID
 		return false, fmt.Errorf("cannot save snapshot query: invalid query.aggregateID")
 	}
 
-	sbSnap := makeDBSnapshot(groupId, aggregateID, version)
+	sbSnap := makeDBSnapshot(groupID, aggregateID, version)
 	col := s.client.Database(s.DBName()).Collection(snapshotCName)
 	/*
 		err = ensureIndex(ctx, col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
