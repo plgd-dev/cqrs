@@ -12,7 +12,7 @@ import (
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
 	pbCRQS "github.com/go-ocf/kit/cqrs/pb"
-	"github.com/go-ocf/kit/http"
+	"github.com/go-ocf/kit/net/http"
 	pbRA "github.com/go-ocf/resource-aggregate/pb"
 	"github.com/stretchr/testify/require"
 )
