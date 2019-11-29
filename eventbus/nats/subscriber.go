@@ -8,7 +8,7 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus"
 	protoEventBus "github.com/go-ocf/cqrs/protobuf/eventbus"
-	nats "github.com/nats-io/go-nats"
+	nats "github.com/nats-io/nats.go"
 )
 
 // Subscriber implements a eventbus.Subscriber interface.

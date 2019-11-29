@@ -10,6 +10,7 @@ require (
 	github.com/gofrs/uuid v3.2.0+incompatible
 	github.com/gogo/protobuf v1.3.1
 	github.com/nats-io/go-nats v1.7.2
+	github.com/nats-io/nats.go v1.9.1
 	github.com/panjf2000/ants v1.3.0
 	github.com/stretchr/testify v1.4.0
 	go.mongodb.org/mongo-driver v1.1.2

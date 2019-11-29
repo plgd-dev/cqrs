@@ -11,7 +11,7 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventbus"
 	"github.com/gofrs/uuid"
-	nats "github.com/nats-io/go-nats"
+	nats "github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 )
 

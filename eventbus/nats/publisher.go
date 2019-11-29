@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-ocf/cqrs/event"
 	protoEventBus "github.com/go-ocf/cqrs/protobuf/eventbus"
-	nats "github.com/nats-io/go-nats"
+	nats "github.com/nats-io/nats.go"
 )
 
 // Publisher implements a eventbus.Publisher interface.
