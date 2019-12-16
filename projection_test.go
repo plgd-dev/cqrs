@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	pbCQRS "github.com/go-ocf/kit/cqrs/pb"
-	pbRA "github.com/go-ocf/resource-aggregate/pb"
+	"github.com/go-ocf/resource-aggregate/pb"
 	"github.com/gofrs/uuid"
 	"github.com/panjf2000/ants"
 
@@ -70,7 +69,7 @@ func TestProjection(t *testing.T) {
 		ctx,
 		host,
 		"test_projection",
-		"pbRA",
+		"pb",
 		128,
 		func(f func()) error { go f(); return nil },
 		func(v interface{}) ([]byte, error) {
@@ -114,38 +113,38 @@ func TestProjection(t *testing.T) {
 		AggregateId: "ID3",
 	}
 
-	commandPub1 := pbRA.PublishResourceRequest{
+	commandPub1 := pb.PublishResourceRequest{
 		ResourceId: path1.AggregateId,
-		Resource: &pbRA.Resource{
+		Resource: &pb.Resource{
 			Id: path1.AggregateId,
 		},
-		AuthorizationContext: &pbCQRS.AuthorizationContext{},
+		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
-	commandPub2 := pbRA.PublishResourceRequest{
+	commandPub2 := pb.PublishResourceRequest{
 		ResourceId: path2.AggregateId,
-		Resource: &pbRA.Resource{
+		Resource: &pb.Resource{
 			Id: path2.AggregateId,
 		},
-		AuthorizationContext: &pbCQRS.AuthorizationContext{},
+		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
-	commandPub3 := pbRA.PublishResourceRequest{
+	commandPub3 := pb.PublishResourceRequest{
 		ResourceId: path3.AggregateId,
-		Resource: &pbRA.Resource{
+		Resource: &pb.Resource{
 			Id: path3.AggregateId,
 		},
-		AuthorizationContext: &pbCQRS.AuthorizationContext{},
+		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
-	commandUnpub1 := pbRA.UnpublishResourceRequest{
+	commandUnpub1 := pb.UnpublishResourceRequest{
 		ResourceId:           path1.AggregateId,
-		AuthorizationContext: &pbCQRS.AuthorizationContext{},
+		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
-	commandUnpub3 := pbRA.UnpublishResourceRequest{
+	commandUnpub3 := pb.UnpublishResourceRequest{
 		ResourceId:           path3.AggregateId,
-		AuthorizationContext: &pbCQRS.AuthorizationContext{},
+		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
 	/*
@@ -155,7 +154,7 @@ func TestProjection(t *testing.T) {
 	*/
 
 	a1, err := NewAggregate(path1.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{pb.ResourceStateSnapshotTaken{Id: path1.AggregateId, Resource: &pb.Resource{}, EventMetadata: &pb.EventMetadata{}}}, nil
 	}, nil)
 	require.NoError(t, err)
 
@@ -169,7 +168,7 @@ func TestProjection(t *testing.T) {
 	}
 
 	a2, err := NewAggregate(path2.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{pb.ResourceStateSnapshotTaken{Id: path2.AggregateId, Resource: &pb.Resource{}, EventMetadata: &pb.EventMetadata{}}}, nil
 	}, nil)
 	require.NoError(t, err)
 
@@ -206,7 +205,7 @@ func TestProjection(t *testing.T) {
 	time.Sleep(waitForSubscription)
 
 	a3, err := NewAggregate(path3.AggregateId, NewDefaultRetryFunc(1), numEventsInSnapshot, store, func(context.Context) (AggregateModel, error) {
-		return &ResourceStateSnapshotTaken{pbRA.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &pbRA.Resource{}, EventMetadata: &pbCQRS.EventMetadata{}}}, nil
+		return &ResourceStateSnapshotTaken{pb.ResourceStateSnapshotTaken{Id: path3.AggregateId, Resource: &pb.Resource{}, EventMetadata: &pb.EventMetadata{}}}, nil
 	}, nil)
 	require.NoError(t, err)
 
