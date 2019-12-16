@@ -11,8 +11,8 @@ import (
 	"github.com/go-ocf/cqrs/event"
 	"github.com/go-ocf/cqrs/eventstore"
 	"github.com/go-ocf/cqrs/eventstore/mongodb"
+	"github.com/go-ocf/cqrs/test/pb"
 	"github.com/go-ocf/kit/net/http"
-	"github.com/go-ocf/resource-aggregate/pb"
 	"github.com/stretchr/testify/require"
 )
 
