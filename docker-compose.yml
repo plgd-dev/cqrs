@@ -37,6 +37,6 @@ services:
       - 8222:8222
 
   mongo:
-    image: mongo:3.4.5
+    image: mongo:3.7.9
     ports:
       - 27017:27017
