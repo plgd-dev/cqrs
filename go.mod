@@ -17,5 +17,5 @@ require (
 	github.com/panjf2000/ants v1.3.0
 	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/pretty v1.0.0 // indirect
-	go.mongodb.org/mongo-driver v1.2.1
+	go.mongodb.org/mongo-driver v1.3.1
 )
