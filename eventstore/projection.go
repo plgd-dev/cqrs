@@ -169,7 +169,7 @@ func (p *Projection) getModel(ctx context.Context, groupId, aggregateId string) 
 	if apm, ok = mapApm[aggregateId]; !ok {
 		model, err := p.factoryModel(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("cannot create model: %v", err)
+			return nil, fmt.Errorf("cannot create model: %w", err)
 		}
 		p.LogDebugfFunc("projection.Projection.getModel: GroupId %v: AggregateId %v: new model", groupId, aggregateId)
 		apm = &aggregateModel{groupId: groupId, aggregateId: aggregateId, model: model, LogDebugfFunc: p.LogDebugfFunc}
@@ -189,7 +189,7 @@ func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries
 		p.LogDebugfFunc("projection.iterator.handle: GroupId %v: AggregateId %v: Version %v, EvenType %v", ie.GroupId, ie.AggregateId, ie.Version, ie.EventType)
 		am, err := p.getModel(ctx, ie.GroupId, ie.AggregateId)
 		if err != nil {
-			return nil, fmt.Errorf("cannot handle projection: %v", err)
+			return nil, fmt.Errorf("cannot handle projection: %w", err)
 		}
 		i := iterator{
 			iter:               iter,
@@ -201,7 +201,7 @@ func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries
 		}
 		err = am.Handle(ctx, &i)
 		if err != nil {
-			return nil, fmt.Errorf("cannot handle projection: %v", err)
+			return nil, fmt.Errorf("cannot handle projection: %w", err)
 		}
 		//check if we are on the end
 		if i.nextEventToProcess == nil {
@@ -232,13 +232,13 @@ func (p *Projection) HandleWithReload(ctx context.Context, iter event.Iter) erro
 	//reload queries for db because version of events was greater > lastVersionSeen+1
 	reloadQueries, err := p.handle(ctx, iter)
 	if err != nil {
-		return fmt.Errorf("cannot handle events with reload: %v", err)
+		return fmt.Errorf("cannot handle events with reload: %w", err)
 	}
 
 	if len(reloadQueries) > 0 {
 		err := p.store.LoadFromVersion(ctx, reloadQueries, p)
 		if err != nil {
-			return fmt.Errorf("cannot reload events for db: %v", err)
+			return fmt.Errorf("cannot reload events for db: %w", err)
 		}
 	}
 	return nil

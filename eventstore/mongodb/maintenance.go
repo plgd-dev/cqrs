@@ -53,9 +53,9 @@ func (s *EventStore) Insert(ctx context.Context, task maintenance.Task) error {
 	)
 	if err != nil {
 		if err == mongo.ErrNilDocument || IsDup(err) {
-			return fmt.Errorf("could not insert record with aggregate ID %v, version %d - version is outdated - %v", task.AggregateID, task.Version, err)
+			return fmt.Errorf("could not insert record with aggregate ID %v, version %d - version is outdated - %w", task.AggregateID, task.Version, err)
 		}
-		return fmt.Errorf("could not insert record with aggregate ID %v, version %d - %v", task.AggregateID, task.Version, err)
+		return fmt.Errorf("could not insert record with aggregate ID %v, version %d - %w", task.AggregateID, task.Version, err)
 	}
 
 	if res.UpsertedCount != 1 && res.ModifiedCount != 1 {

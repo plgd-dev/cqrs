@@ -80,11 +80,11 @@ func NewEventStore(ctx context.Context, host, dbPrefix string, colPrefix string,
 	newOpts = append(newOpts, opts...)
 	client, err := mongo.Connect(ctx, newOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("could not dial database: %v", err)
+		return nil, fmt.Errorf("could not dial database: %w", err)
 	}
 	err = client.Ping(ctx, readpref.Primary())
 	if err != nil {
-		return nil, fmt.Errorf("could not dial database: %v", err)
+		return nil, fmt.Errorf("could not dial database: %w", err)
 	}
 
 	return NewEventStoreWithClient(ctx, client, dbPrefix, colPrefix, batchSize, goroutinePoolGo, eventMarshaler, eventUnmarshaler, LogDebugfFunc)
@@ -133,17 +133,17 @@ func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix
 	colEv := s.client.Database(s.DBName()).Collection(eventCName)
 	err := ensureIndex(ctx, colEv, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
 	if err != nil {
-		return nil, fmt.Errorf("cannot save events: %v", err)
+		return nil, fmt.Errorf("cannot save events: %w", err)
 	}
 	colSn := s.client.Database(s.DBName()).Collection(snapshotCName)
 	err = ensureIndex(ctx, colSn, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
 	if err != nil {
-		return nil, fmt.Errorf("cannot save snapshot query: %v", err)
+		return nil, fmt.Errorf("cannot save snapshot query: %w", err)
 	}
 	colAv := s.client.Database(s.DBName()).Collection(maintenanceCName)
 	err = ensureIndex(ctx, colAv)
 	if err != nil {
-		return nil, fmt.Errorf("cannot save maintenance query: %v", err)
+		return nil, fmt.Errorf("cannot save maintenance query: %w", err)
 	}
 
 	return s, nil
@@ -180,7 +180,7 @@ func (s *EventStore) saveEvent(ctx context.Context, col *mongo.Collection, group
 		if IsDup(err) {
 			return true, nil
 		}
-		return false, fmt.Errorf("cannot save events: %v", err)
+		return false, fmt.Errorf("cannot save events: %w", err)
 	}
 	return false, nil
 }
@@ -212,7 +212,7 @@ func (s *EventStore) saveEvents(ctx context.Context, col *mongo.Collection, grou
 		if IsDup(err) {
 			return true, nil
 		}
-		return false, fmt.Errorf("cannot save events: %v", err)
+		return false, fmt.Errorf("cannot save events: %w", err)
 	}
 	return false, err
 }
@@ -238,7 +238,7 @@ func ensureIndex(ctx context.Context, col *mongo.Collection, indexes ...bson.D) 
 				//index already exist, just skip error and continue
 				continue
 			}
-			return fmt.Errorf("cannot ensure indexes for eventstore: %v", err)
+			return fmt.Errorf("cannot ensure indexes for eventstore: %w", err)
 		}
 	}
 	return nil
@@ -262,7 +262,7 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 	if events[0].Version() == 0 {
 		concurrencyException, err = s.SaveSnapshotQuery(ctx, groupId, aggregateId, 0)
 		if err != nil {
-			return false, fmt.Errorf("cannot save events without snapshot query for version 0: %v", err)
+			return false, fmt.Errorf("cannot save events without snapshot query for version 0: %w", err)
 		}
 		if concurrencyException {
 			return concurrencyException, nil
@@ -273,7 +273,7 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 	/*
 		err = ensureIndex(ctx, col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
 		if err != nil {
-			return false, fmt.Errorf("cannot save events: %v", err)
+			return false, fmt.Errorf("cannot save events: %w", err)
 		}
 	*/
 
@@ -366,7 +366,7 @@ func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
 		if len(queries) >= l.store.batchSize {
 			err := l.store.LoadFromVersion(ctx, queries, l.eventHandler)
 			if err != nil {
-				errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %v", err))
+				errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %w", err))
 			}
 			queries = queries[:0]
 		}
@@ -408,14 +408,14 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 				if err != nil {
 					errorsLock.Lock()
 					defer errorsLock.Unlock()
-					errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %v", err))
+					errors = append(errors, fmt.Errorf("cannot load events to eventstore model: %w", err))
 				}
 				l.store.LogDebugfFunc("mongodb:loader:QueryHandlePool:doneTask")
 			})
 			if err != nil {
 				wg.Done()
 				errorsLock.Lock()
-				errors = append(errors, fmt.Errorf("cannot submit task to load events to eventstore model: %v", err))
+				errors = append(errors, fmt.Errorf("cannot submit task to load events to eventstore model: %w", err))
 				errorsLock.Unlock()
 				break
 			}
@@ -447,7 +447,7 @@ func (s *EventStore) LoadUpToVersion(ctx context.Context, queries []eventstore.V
 
 	q, err := versionQueriesToMgoQuery(queries, signOperator_lt)
 	if err != nil {
-		return fmt.Errorf("cannot load events up to version: %v", err)
+		return fmt.Errorf("cannot load events up to version: %w", err)
 	}
 
 	return s.loadMgoQuery(ctx, eh, q)
@@ -463,7 +463,7 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.V
 
 	q, err := versionQueriesToMgoQuery(queries, signOperator_gte)
 	if err != nil {
-		return fmt.Errorf("cannot load events from version: %v", err)
+		return fmt.Errorf("cannot load events from version: %w", err)
 	}
 
 	return s.loadMgoQuery(ctx, eh, q)
@@ -541,7 +541,7 @@ func makeDBEvent(groupID, aggregateID string, event event.Event, marshaler event
 	// Marshal event data if there is any.
 	raw, err := marshaler(event)
 	if err != nil {
-		return bson.M{}, fmt.Errorf("cannot create db event: %v", err)
+		return bson.M{}, fmt.Errorf("cannot create db event: %w", err)
 	}
 
 	return bson.M{
@@ -581,7 +581,7 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID
 	/*
 		err = ensureIndex(ctx, col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
 		if err != nil {
-			return false, fmt.Errorf("cannot save snapshot query: %v", err)
+			return false, fmt.Errorf("cannot save snapshot query: %w", err)
 		}
 	*/
 	if version == 0 {
@@ -608,7 +608,7 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID
 			// someone update store newer snapshot
 			return true, nil
 		}
-		return false, fmt.Errorf("cannot save snapshot query: %v", err)
+		return false, fmt.Errorf("cannot save snapshot query: %w", err)
 	}
 	return false, nil
 }
@@ -689,7 +689,7 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 func (s *EventStore) RemoveUpToVersion(ctx context.Context, queries []eventstore.VersionQuery) error {
 	deleteMgoQuery, err := versionQueriesToMgoQuery(queries, signOperator_lt)
 	if err != nil {
-		return fmt.Errorf("cannot remove events up to version: %v", err)
+		return fmt.Errorf("cannot remove events up to version: %w", err)
 	}
 
 	_, err = s.client.Database(s.DBName()).Collection(eventCName).DeleteMany(ctx, deleteMgoQuery)

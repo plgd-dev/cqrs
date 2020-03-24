@@ -52,7 +52,7 @@ func (ep *GoroutinePoolHandler) run(ctx context.Context, p *eventsProcessor) err
 		ep.tryToDelete(p.name)
 	})
 	if err != nil {
-		return fmt.Errorf("cannot execute goroutine pool go function: %v", err)
+		return fmt.Errorf("cannot execute goroutine pool go function: %w", err)
 	}
 	return nil
 }
@@ -70,7 +70,7 @@ func (ep *GoroutinePoolHandler) Handle(ctx context.Context, iter event.Iter) (er
 			if spawnGo {
 				err := ep.run(ctx, ed)
 				if err != nil {
-					return fmt.Errorf("cannot handle events: %v", err)
+					return fmt.Errorf("cannot handle events: %w", err)
 				}
 			}
 			events = make([]event.EventUnmarshaler, 0, 128)
@@ -84,7 +84,7 @@ func (ep *GoroutinePoolHandler) Handle(ctx context.Context, iter event.Iter) (er
 		if spawnGo {
 			err := ep.run(ctx, ed)
 			if err != nil {
-				return fmt.Errorf("cannot handle events: %v", err)
+				return fmt.Errorf("cannot handle events: %w", err)
 			}
 		}
 	}
@@ -167,7 +167,7 @@ func (ed *eventsProcessor) process(ctx context.Context, eh event.Handler) error 
 			ed.lock.Lock()
 			defer ed.lock.Unlock()
 			ed.isProcessed = false
-			return fmt.Errorf("cannot process event: %v", err)
+			return fmt.Errorf("cannot process event: %w", err)
 		}
 	}
 }

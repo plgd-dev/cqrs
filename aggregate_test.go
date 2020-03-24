@@ -179,7 +179,7 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 		}
 		err := rs.HandleEventResourcePublished(ctx, rp)
 		if err != nil {
-			return nil, fmt.Errorf("cannot handle resource publish: %v", err)
+			return nil, fmt.Errorf("cannot handle resource publish: %w", err)
 		}
 		return []event.Event{rp}, nil
 	case pb.UnpublishResourceRequest:
@@ -193,7 +193,7 @@ func (rs *ResourceStateSnapshotTaken) HandleCommand(ctx context.Context, cmd Com
 		}}
 		err := rs.HandleEventResourceUnpublished(ctx, ru)
 		if err != nil {
-			return nil, fmt.Errorf("cannot handle resource unpublish: %v", err)
+			return nil, fmt.Errorf("cannot handle resource unpublish: %w", err)
 		}
 		return []event.Event{ru}, nil
 	}

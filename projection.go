@@ -74,13 +74,13 @@ func (p *Projection) SubscribeTo(topics []string) error {
 		}
 		observer, err := p.subscriber.Subscribe(p.ctx, p.subscriptionId, topics, p)
 		if err != nil {
-			return fmt.Errorf("projection cannot subscribe to topics: %v", err)
+			return fmt.Errorf("projection cannot subscribe to topics: %w", err)
 		}
 		p.observer = observer
 	}
 	err := p.observer.SetTopics(p.ctx, topics)
 	if err != nil {
-		return fmt.Errorf("projection cannot set topics: %v", err)
+		return fmt.Errorf("projection cannot set topics: %w", err)
 	}
 
 	return nil
