@@ -43,7 +43,7 @@ func NewSubscriber(url string, eventUnmarshaler event.UnmarshalerFunc, goroutine
 
 	conn, err := nats.Connect(url, options...)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create client: %v", err)
+		return nil, fmt.Errorf("cannot create client: %w", err)
 	}
 
 	return &Subscriber{
@@ -60,7 +60,7 @@ func (b *Subscriber) Subscribe(ctx context.Context, subscriptionId string, topic
 
 	err := observer.SetTopics(ctx, topics)
 	if err != nil {
-		return nil, fmt.Errorf("cannot subscribe: %v", err)
+		return nil, fmt.Errorf("cannot subscribe: %w", err)
 	}
 
 	return observer, nil
@@ -118,13 +118,13 @@ func (o *Observer) SetTopics(ctx context.Context, topics []string) error {
 
 	newTopicsForSub, err := o.cleanUp(mapTopics)
 	if err != nil {
-		return fmt.Errorf("cannot set topics: %v", err)
+		return fmt.Errorf("cannot set topics: %w", err)
 	}
 	for topic := range newTopicsForSub {
 		sub, err := o.conn.QueueSubscribe(topic, o.subscriptionId, o.handleMsg)
 		if err != nil {
 			o.cleanUp(make(map[string]bool))
-			return fmt.Errorf("cannot subscribe to topics: %v", err)
+			return fmt.Errorf("cannot subscribe to topics: %w", err)
 		}
 		o.subs[topic] = sub
 	}
@@ -138,7 +138,7 @@ func (o *Observer) Close() error {
 	defer o.lock.Unlock()
 	_, err := o.cleanUp(make(map[string]bool))
 	if err != nil {
-		return fmt.Errorf("cannot close observer: %v", err)
+		return fmt.Errorf("cannot close observer: %w", err)
 	}
 	return nil
 }
@@ -148,7 +148,7 @@ func (o *Observer) handleMsg(msg *nats.Msg) {
 
 	err := e.Unmarshal(msg.Data)
 	if err != nil {
-		o.errFunc(fmt.Errorf("cannot unmarshal event: %v", err))
+		o.errFunc(fmt.Errorf("cannot unmarshal event: %w", err))
 		return
 	}
 
@@ -161,7 +161,7 @@ func (o *Observer) handleMsg(msg *nats.Msg) {
 	}
 
 	if err := o.eventHandler.Handle(context.Background(), &i); err != nil {
-		o.errFunc(fmt.Errorf("cannot unmarshal event: %v", err))
+		o.errFunc(fmt.Errorf("cannot unmarshal event: %w", err))
 	}
 }
 

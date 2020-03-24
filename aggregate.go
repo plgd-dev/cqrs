@@ -136,7 +136,7 @@ func (ah *aggrModel) Handle(ctx context.Context, iter event.Iter) error {
 func handleRetry(ctx context.Context, retryFunc RetryFunc) error {
 	when, err := retryFunc()
 	if err != nil {
-		return fmt.Errorf("cannot retry: %v", err)
+		return fmt.Errorf("cannot retry: %w", err)
 	}
 	select {
 	case <-time.After(when.Sub(time.Now())):
@@ -157,7 +157,7 @@ func newAggrModel(ctx context.Context, aggregateId string, store eventstore.Even
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("cannot load aggregate model: %v", err)
+		return nil, fmt.Errorf("cannot load aggregate model: %w", err)
 	}
 	return amodel, nil
 }
@@ -175,7 +175,7 @@ func (a *Aggregate) handleCommandWithAggrModel(ctx context.Context, cmd Command,
 		if ok {
 			concurrencyException, err := a.store.SaveSnapshot(ctx, amodel.GroupId(), a.aggregateId, snapshotEvent)
 			if err != nil {
-				return nil, false, fmt.Errorf("cannot save snapshot: %v", err)
+				return nil, false, fmt.Errorf("cannot save snapshot: %w", err)
 			}
 			if concurrencyException {
 				return nil, true, nil
@@ -187,13 +187,13 @@ func (a *Aggregate) handleCommandWithAggrModel(ctx context.Context, cmd Command,
 
 	newEvents, err := amodel.HandleCommand(ctx, cmd, newVersion)
 	if err != nil {
-		return nil, false, fmt.Errorf("cannot handle command by model: %v", err)
+		return nil, false, fmt.Errorf("cannot handle command by model: %w", err)
 	}
 
 	if len(newEvents) > 0 {
 		concurrencyException, err := a.store.Save(ctx, amodel.GroupId(), a.aggregateId, newEvents)
 		if err != nil {
-			return nil, false, fmt.Errorf("cannot save events: %v", err)
+			return nil, false, fmt.Errorf("cannot save events: %w", err)
 		}
 
 		if concurrencyException {
@@ -211,24 +211,24 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Eve
 		if !firstIteration {
 			err := handleRetry(ctx, a.retryFunc)
 			if err != nil {
-				return nil, fmt.Errorf("aggregate model cannot handle command: %v", err)
+				return nil, fmt.Errorf("aggregate model cannot handle command: %w", err)
 			}
 		}
 
 		firstIteration = false
 		model, err := a.factoryModel(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("aggregate model cannot handle command: %v", err)
+			return nil, fmt.Errorf("aggregate model cannot handle command: %w", err)
 		}
 
 		amodel, err := newAggrModel(ctx, a.aggregateId, a.store, a.LogDebugfFunc, model)
 		if err != nil {
-			return nil, fmt.Errorf("aggregate model cannot handle command: %v", err)
+			return nil, fmt.Errorf("aggregate model cannot handle command: %w", err)
 		}
 
 		events, concurrencyException, err := a.handleCommandWithAggrModel(ctx, cmd, amodel)
 		if err != nil {
-			return nil, fmt.Errorf("aggregate model cannot handle command: %v", err)
+			return nil, fmt.Errorf("aggregate model cannot handle command: %w", err)
 		}
 		if concurrencyException {
 			continue

@@ -20,7 +20,7 @@ type Publisher struct {
 func NewPublisher(url string, eventMarshaler event.MarshalerFunc, options ...nats.Option) (*Publisher, error) {
 	conn, err := nats.Connect(url, options...)
 	if err != nil {
-		return nil, fmt.Errorf("cannot connect to server: %v", err)
+		return nil, fmt.Errorf("cannot connect to server: %w", err)
 	}
 
 	return &Publisher{
