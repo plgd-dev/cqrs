@@ -14,7 +14,7 @@ services:
     working_dir: /cqrs
 
   kafka:
-    image: confluentinc/cp-kafka:5.0.0
+    image: confluentinc/cp-kafka:5.5.1
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
