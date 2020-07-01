@@ -8,7 +8,7 @@ require (
 	github.com/bsm/sarama-cluster v2.1.15+incompatible
 	github.com/go-ocf/kit v0.0.0-20200110080107-134a1202b156
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/gofrs/uuid v3.2.0+incompatible
+	github.com/gofrs/uuid v3.3.0+incompatible
 	github.com/gogo/protobuf v1.3.1
 	github.com/nats-io/nats-server/v2 v2.1.2 // indirect
 	github.com/nats-io/nats.go v1.9.1
