@@ -14,7 +14,7 @@ require (
 	github.com/nats-io/nats.go v1.9.1
 	github.com/onsi/ginkgo v1.11.0 // indirect
 	github.com/onsi/gomega v1.8.1 // indirect
-	github.com/panjf2000/ants v1.3.0
+	github.com/panjf2000/ants/v2 v2.4.1
 	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/pretty v1.0.0 // indirect
 	go.mongodb.org/mongo-driver v1.2.1
