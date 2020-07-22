@@ -11,7 +11,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/go-ocf/cqrs/test/pb"
 	"github.com/gofrs/uuid"
-	"github.com/panjf2000/ants"
+	"github.com/panjf2000/ants/v2"
 
 	"github.com/go-ocf/cqrs/eventbus/kafka"
 	"github.com/go-ocf/cqrs/eventstore"
