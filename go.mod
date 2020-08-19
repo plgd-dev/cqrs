@@ -9,7 +9,7 @@ require (
 	github.com/gofrs/uuid v3.3.0+incompatible
 	github.com/gogo/protobuf v1.3.1
 	github.com/nats-io/nats-server/v2 v2.1.2 // indirect
-	github.com/nats-io/nats.go v1.9.1
+	github.com/nats-io/nats.go v1.10.0
 	github.com/onsi/ginkgo v1.11.0 // indirect
 	github.com/onsi/gomega v1.8.1 // indirect
 	github.com/panjf2000/ants/v2 v2.4.1
