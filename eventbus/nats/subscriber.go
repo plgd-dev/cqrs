@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/go-ocf/cqrs/event"
-	"github.com/go-ocf/cqrs/eventbus"
-	protoEventBus "github.com/go-ocf/cqrs/protobuf/eventbus"
+	"github.com/plgd-dev/cqrs/event"
+	"github.com/plgd-dev/cqrs/eventbus"
+	protoEventBus "github.com/plgd-dev/cqrs/protobuf/eventbus"
 	nats "github.com/nats-io/nats.go"
 )
 

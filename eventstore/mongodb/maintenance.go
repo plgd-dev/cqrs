@@ -8,7 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/go-ocf/cqrs/eventstore/maintenance"
+	"github.com/plgd-dev/cqrs/eventstore/maintenance"
 	"go.mongodb.org/mongo-driver/bson"
 )
 

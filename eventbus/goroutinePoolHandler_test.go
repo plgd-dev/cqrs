@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/go-ocf/cqrs/event"
+	"github.com/plgd-dev/cqrs/event"
 )
 
 type mockEventHandler struct {

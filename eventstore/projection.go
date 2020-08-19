@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/go-ocf/cqrs/event"
+	"github.com/plgd-dev/cqrs/event"
 )
 
 // Model user defined model where events from eventstore will be projected.

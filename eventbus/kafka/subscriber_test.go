@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-ocf/cqrs/event"
-	"github.com/go-ocf/cqrs/eventbus"
+	"github.com/plgd-dev/cqrs/event"
+	"github.com/plgd-dev/cqrs/eventbus"
 	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/assert"
 )

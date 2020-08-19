@@ -4,7 +4,7 @@ package ocf.cloud.cqrs.eventbus;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
-option go_package = "github.com/go-ocf/cqrs/protobuf/eventbus;eventbus";
+option go_package = "github.com/plgd-dev/cqrs/protobuf/eventbus;eventbus";
 
 
 message Event {

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-ocf/cqrs/event"
-	"github.com/go-ocf/cqrs/eventstore"
+	"github.com/plgd-dev/cqrs/event"
+	"github.com/plgd-dev/cqrs/eventstore"
 )
 
 // Command user defined command that will handled in AggregateModel.HandleCommand

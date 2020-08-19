@@ -3,7 +3,7 @@ package eventstore
 import (
 	"context"
 
-	event "github.com/go-ocf/cqrs/event"
+	event "github.com/plgd-dev/cqrs/event"
 )
 
 // VersionQuery used to load events from version.

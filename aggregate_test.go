@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-ocf/cqrs/event"
-	"github.com/go-ocf/cqrs/eventstore"
-	"github.com/go-ocf/cqrs/eventstore/mongodb"
-	"github.com/go-ocf/cqrs/test/pb"
-	"github.com/go-ocf/kit/net/http"
+	"github.com/plgd-dev/cqrs/event"
+	"github.com/plgd-dev/cqrs/eventstore"
+	"github.com/plgd-dev/cqrs/eventstore/mongodb"
+	"github.com/plgd-dev/cqrs/test/pb"
+	"github.com/plgd-dev/kit/net/http"
 	"github.com/stretchr/testify/require"
 )
 

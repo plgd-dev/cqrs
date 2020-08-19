@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/go-ocf/cqrs/event"
+	"github.com/plgd-dev/cqrs/event"
 )
 
 // ErrFunc used by handler to report error from observation
