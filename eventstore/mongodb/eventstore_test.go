@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-ocf/cqrs/eventstore/test"
+	"github.com/plgd-dev/cqrs/eventstore/test"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 )

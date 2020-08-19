@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-ocf/cqrs/test/pb"
+	"github.com/plgd-dev/cqrs/test/pb"
 	"github.com/gofrs/uuid"
 	"github.com/panjf2000/ants/v2"
 
-	"github.com/go-ocf/cqrs/eventbus/kafka"
-	"github.com/go-ocf/cqrs/eventstore"
-	"github.com/go-ocf/cqrs/eventstore/mongodb"
+	"github.com/plgd-dev/cqrs/eventbus/kafka"
+	"github.com/plgd-dev/cqrs/eventstore"
+	"github.com/plgd-dev/cqrs/eventstore/mongodb"
 	"github.com/stretchr/testify/require"
 )
 

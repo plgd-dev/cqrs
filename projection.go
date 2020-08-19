@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/go-ocf/cqrs/event"
-	"github.com/go-ocf/cqrs/eventbus"
-	"github.com/go-ocf/cqrs/eventstore"
+	"github.com/plgd-dev/cqrs/event"
+	"github.com/plgd-dev/cqrs/eventbus"
+	"github.com/plgd-dev/cqrs/eventstore"
 )
 
 // Projection project events to user defined model from evenstore and update it by events from subscriber.

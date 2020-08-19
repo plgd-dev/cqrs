@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-ocf/cqrs/event"
-	protoEventBus "github.com/go-ocf/cqrs/protobuf/eventbus"
+	"github.com/plgd-dev/cqrs/event"
+	protoEventBus "github.com/plgd-dev/cqrs/protobuf/eventbus"
 
 	sarama "github.com/Shopify/sarama"
 )

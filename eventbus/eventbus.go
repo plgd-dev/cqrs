@@ -3,7 +3,7 @@ package eventbus
 import (
 	"context"
 
-	"github.com/go-ocf/cqrs/event"
+	"github.com/plgd-dev/cqrs/event"
 )
 
 // Publisher publish event to topics

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-ocf/cqrs/eventstore/maintenance"
+	"github.com/plgd-dev/cqrs/eventstore/maintenance"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 )
