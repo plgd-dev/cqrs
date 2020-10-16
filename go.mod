@@ -12,7 +12,7 @@ require (
 	github.com/nats-io/nats.go v1.9.1
 	github.com/onsi/ginkgo v1.11.0 // indirect
 	github.com/onsi/gomega v1.8.1 // indirect
-	github.com/panjf2000/ants/v2 v2.4.1
+	github.com/panjf2000/ants/v2 v2.4.3
 	github.com/plgd-dev/kit v0.0.0-20200819113605-d5fcf3e94f63
 	github.com/stretchr/testify v1.5.1
 	github.com/tidwall/pretty v1.0.0 // indirect
