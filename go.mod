@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	github.com/DataDog/zstd v1.4.4 // indirect
-	github.com/Shopify/sarama v1.24.1
+	github.com/Shopify/sarama v1.27.2
 	github.com/bsm/sarama-cluster v2.1.15+incompatible
 	github.com/gofrs/uuid v3.3.0+incompatible
 	github.com/gogo/protobuf v1.3.1
@@ -14,7 +14,7 @@ require (
 	github.com/onsi/gomega v1.8.1 // indirect
 	github.com/panjf2000/ants/v2 v2.4.1
 	github.com/plgd-dev/kit v0.0.0-20200819113605-d5fcf3e94f63
-	github.com/stretchr/testify v1.5.1
+	github.com/stretchr/testify v1.6.1
 	github.com/tidwall/pretty v1.0.0 // indirect
 	go.mongodb.org/mongo-driver v1.2.1
 )
