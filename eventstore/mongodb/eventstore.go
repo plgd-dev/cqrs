@@ -501,10 +501,13 @@ func (s *EventStore) LoadFromSnapshot(ctx context.Context, queries []eventstore.
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.LoadFromSnapshot takes %v", time.Since(t))
 	}()
-	return s.LoadSnapshotQueries(ctx, queries, &loader{
-		store:        s,
-		eventHandler: eventHandler,
-	})
+	return nil
+	/*
+		return s.LoadSnapshotQueries(ctx, queries, &loader{
+			store:        s,
+			eventHandler: eventHandler,
+		})
+	*/
 }
 
 // DBName returns db name
