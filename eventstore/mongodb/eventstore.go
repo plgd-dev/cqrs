@@ -356,7 +356,7 @@ type loader struct {
 	eventHandler event.Handler
 }
 
-func (l *loader) QueryHandle(ctx context.Context, iter snapQueryIface) error {
+func (l *loader) QueryHandle(ctx context.Context, iter *queryIterator) error {
 	var query eventstore.VersionQuery
 	queries := make([]eventstore.VersionQuery, 0, 128)
 	var errors []error
@@ -386,7 +386,7 @@ func (l *loader) QueryHandle(ctx context.Context, iter snapQueryIface) error {
 	return nil
 }
 
-func (l *loader) QueryHandlePool(ctx context.Context, iter snapQueryIface) error {
+func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error {
 	var query eventstore.VersionQuery
 	queries := make([]eventstore.VersionQuery, 0, 128)
 	var wg sync.WaitGroup
@@ -616,6 +616,15 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID
 func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {
 	orQueries := make([]bson.M, 0, 32)
 
+	if len(queries) == 1 {
+		if queries[0].AggregateId != "" {
+			return bson.M{aggregateIdKey: queries[0].AggregateId}
+		}
+		if queries[0].AggregateId == "" && queries[0].GroupId != "" {
+			return bson.M{groupIdKey: queries[0].GroupId}
+		}
+	}
+
 	for _, q := range queries {
 		andQueries := make([]bson.M, 0, 4)
 		if q.AggregateId != "" {
@@ -631,11 +640,6 @@ func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {
 		return bson.M{"$or": orQueries}
 	}
 	return bson.M{}
-}
-
-type snapQueryIface interface {
-	Next(ctx context.Context, q *eventstore.VersionQuery) bool
-	Err() error
 }
 
 type queryIterator struct {
@@ -664,26 +668,6 @@ func (i *queryIterator) Err() error {
 	return i.iter.Err()
 }
 
-type mockQueryIterator struct {
-	queries []eventstore.SnapshotQuery
-	idx     int
-}
-
-func (i *mockQueryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bool {
-	if i.idx >= len(i.queries) {
-		return false
-	}
-	*q = eventstore.VersionQuery{
-		AggregateId: i.queries[i.idx].AggregateId,
-	}
-	i.idx++
-	return true
-}
-
-func (i *mockQueryIterator) Err() error {
-	return nil
-}
-
 func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.SnapshotQuery, qh *loader) error {
 	s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries start")
 	t := time.Now()
@@ -691,28 +675,23 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 		s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries takes %v", time.Since(t))
 	}()
 
-	var err error
+	iter, err := s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, snapshotQueriesToMgoQuery(queries))
+	if err == mongo.ErrNilDocument {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	if s.goroutinePoolGo != nil {
-		err = qh.QueryHandlePool(ctx, &mockQueryIterator{queries: queries})
+		err = qh.QueryHandlePool(ctx, &queryIterator{iter})
 	} else {
-		err = qh.QueryHandle(ctx, &mockQueryIterator{queries: queries})
+		err = qh.QueryHandle(ctx, &queryIterator{iter})
+	}
+	errClose := iter.Close(ctx)
+	if err == nil {
+		return errClose
 	}
 	return err
-	/*
-		iter, err := s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, snapshotQueriesToMgoQuery(queries))
-		if err == mongo.ErrNilDocument {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		errClose := iter.Close(ctx)
-		if err == nil {
-			return errClose
-		}
-		return err
-	*/
 }
 
 // RemoveUpToVersion deletes the aggragates events up to a specific version.
