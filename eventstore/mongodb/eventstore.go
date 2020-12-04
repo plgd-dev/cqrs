@@ -620,6 +620,7 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID
 func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) (bson.M, *options.FindOptions) {
 	orQueries := make([]bson.M, 0, 32)
 
+	// TODO we need to set hint for len(queries) > 1
 	if len(queries) == 1 {
 		if queries[0].AggregateId != "" {
 			opts := options.FindOptions{}
