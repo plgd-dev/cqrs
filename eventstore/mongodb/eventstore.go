@@ -39,6 +39,10 @@ var snapshotsQueryGroupIdIndex = bson.D{
 	{groupIdKey, 1},
 }
 
+var snapshotsAggregateIdIdIndex = bson.D{
+	{aggregateIdKey, 1},
+}
+
 var eventsQueryIndex = bson.D{
 	{versionKey, 1},
 	{aggregateIdKey, 1},
@@ -136,7 +140,7 @@ func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix
 		return nil, fmt.Errorf("cannot save events: %w", err)
 	}
 	colSn := s.client.Database(s.DBName()).Collection(snapshotCName)
-	err = ensureIndex(ctx, colSn, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
+	err = ensureIndex(ctx, colSn, snapshotsAggregateIdIdIndex, snapshotsQueryGroupIdIndex, snapshotsQueryIndex)
 	if err != nil {
 		return nil, fmt.Errorf("cannot save snapshot query: %w", err)
 	}
@@ -613,8 +617,22 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID
 	return false, nil
 }
 
-func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {
+func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) (bson.M, *options.FindOptions) {
 	orQueries := make([]bson.M, 0, 32)
+
+	// TODO we need to set hint for len(queries) > 1
+	if len(queries) == 1 {
+		if queries[0].AggregateId != "" {
+			opts := options.FindOptions{}
+			opts.SetHint(snapshotsAggregateIdIdIndex)
+			return bson.M{aggregateIdKey: queries[0].AggregateId}, &opts
+		}
+		if queries[0].AggregateId == "" && queries[0].GroupId != "" {
+			opts := options.FindOptions{}
+			opts.SetHint(snapshotsQueryGroupIdIndex)
+			return bson.M{groupIdKey: queries[0].GroupId}, &opts
+		}
+	}
 
 	for _, q := range queries {
 		andQueries := make([]bson.M, 0, 4)
@@ -628,9 +646,9 @@ func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) bson.M {
 	}
 
 	if len(orQueries) > 0 {
-		return bson.M{"$or": orQueries}
+		return bson.M{"$or": orQueries}, nil
 	}
-	return bson.M{}
+	return bson.M{}, nil
 }
 
 type queryIterator struct {
@@ -666,7 +684,14 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 		s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries takes %v", time.Since(t))
 	}()
 
-	iter, err := s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, snapshotQueriesToMgoQuery(queries))
+	var err error
+	var iter *mongo.Cursor
+	query, hint := snapshotQueriesToMgoQuery(queries)
+	if hint == nil {
+		iter, err = s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, query)
+	} else {
+		iter, err = s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, query, hint)
+	}
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
