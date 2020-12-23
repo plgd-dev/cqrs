@@ -42,7 +42,8 @@ type FactoryModelFunc func(ctx context.Context) (AggregateModel, error)
 
 // Aggregate holds data for Handle command
 type Aggregate struct {
-	aggregateId         string
+	groupID             string
+	aggregateID         string
 	numEventsInSnapshot int
 	store               eventstore.EventStore
 	retryFunc           RetryFunc
@@ -51,9 +52,11 @@ type Aggregate struct {
 }
 
 // NewAggregate creates aggregate. it load and store events created from commands
-func NewAggregate(aggregateId string, retryFunc RetryFunc, numEventsInSnapshot int, store eventstore.EventStore, factoryModel FactoryModelFunc, LogDebugfFunc eventstore.LogDebugfFunc) (*Aggregate, error) {
-
-	if aggregateId == "" {
+func NewAggregate(groupID, aggregateID string, retryFunc RetryFunc, numEventsInSnapshot int, store eventstore.EventStore, factoryModel FactoryModelFunc, LogDebugfFunc eventstore.LogDebugfFunc) (*Aggregate, error) {
+	if groupID == "" {
+		return nil, errors.New("cannot create aggregate: invalid groupID")
+	}
+	if aggregateID == "" {
 		return nil, errors.New("cannot create aggregate: invalid aggregateId")
 	}
 	if retryFunc == nil {
@@ -67,7 +70,8 @@ func NewAggregate(aggregateId string, retryFunc RetryFunc, numEventsInSnapshot i
 	}
 
 	return &Aggregate{
-		aggregateId:         aggregateId,
+		groupID:             groupID,
+		aggregateID:         aggregateID,
 		numEventsInSnapshot: numEventsInSnapshot,
 		store:               store,
 		factoryModel:        factoryModel,
@@ -146,12 +150,13 @@ func handleRetry(ctx context.Context, retryFunc RetryFunc) error {
 	return nil
 }
 
-func newAggrModel(ctx context.Context, aggregateId string, store eventstore.EventStore, logDebugfFunc eventstore.LogDebugfFunc, model AggregateModel) (*aggrModel, error) {
+func newAggrModel(ctx context.Context, groupID, aggregateID string, store eventstore.EventStore, logDebugfFunc eventstore.LogDebugfFunc, model AggregateModel) (*aggrModel, error) {
 	amodel := &aggrModel{model: model}
 	ep := eventstore.NewProjection(store, func(ctx context.Context) (eventstore.Model, error) { return amodel, nil }, logDebugfFunc)
 	err := ep.Project(ctx, []eventstore.SnapshotQuery{
 		eventstore.SnapshotQuery{
-			AggregateId:       aggregateId,
+			GroupID:           groupID,
+			AggregateID:       aggregateID,
 			SnapshotEventType: model.SnapshotEventType(),
 		},
 	})
@@ -173,7 +178,7 @@ func (a *Aggregate) handleCommandWithAggrModel(ctx context.Context, cmd Command,
 	if amodel.numEvents >= a.numEventsInSnapshot {
 		snapshotEvent, ok := amodel.TakeSnapshot(newVersion)
 		if ok {
-			concurrencyException, err := a.store.SaveSnapshot(ctx, amodel.GroupId(), a.aggregateId, snapshotEvent)
+			concurrencyException, err := a.store.SaveSnapshot(ctx, a.groupID, a.aggregateID, snapshotEvent)
 			if err != nil {
 				return nil, false, fmt.Errorf("cannot save snapshot: %w", err)
 			}
@@ -191,7 +196,7 @@ func (a *Aggregate) handleCommandWithAggrModel(ctx context.Context, cmd Command,
 	}
 
 	if len(newEvents) > 0 {
-		concurrencyException, err := a.store.Save(ctx, amodel.GroupId(), a.aggregateId, newEvents)
+		concurrencyException, err := a.store.Save(ctx, a.groupID, a.aggregateID, newEvents)
 		if err != nil {
 			return nil, false, fmt.Errorf("cannot save events: %w", err)
 		}
@@ -221,7 +226,7 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd Command) ([]event.Eve
 			return nil, fmt.Errorf("aggregate model cannot handle command: %w", err)
 		}
 
-		amodel, err := newAggrModel(ctx, a.aggregateId, a.store, a.LogDebugfFunc, model)
+		amodel, err := newAggrModel(ctx, a.groupID, a.aggregateID, a.store, a.LogDebugfFunc, model)
 		if err != nil {
 			return nil, fmt.Errorf("aggregate model cannot handle command: %w", err)
 		}

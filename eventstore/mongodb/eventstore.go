@@ -317,9 +317,9 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	i.LogDebugfFunc("mongodb.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", event[groupIdKey].(string), event[aggregateIdKey].(string), version, event[eventTypeKey].(string))
 
 	e.Version = uint64(version)
-	e.AggregateId = event[aggregateIdKey].(string)
+	e.AggregateID = event[aggregateIdKey].(string)
 	e.EventType = event[eventTypeKey].(string)
-	e.GroupId = event[groupIdKey].(string)
+	e.GroupID = event[groupIdKey].(string)
 	data := event[dataKey].(primitive.Binary)
 	e.Unmarshal = func(v interface{}) error {
 		return i.dataUnmarshaler(data.Data, v)
@@ -339,7 +339,7 @@ func versionQueriesToMgoQuery(queries []eventstore.VersionQuery, op signOperator
 	}
 
 	for _, q := range queries {
-		if q.AggregateId == "" {
+		if q.AggregateID == "" {
 			return bson.M{}, fmt.Errorf("invalid VersionQuery.AggregateId")
 		}
 		orQueries = append(orQueries, versionQueryToMgoQuery(q, op))
@@ -351,7 +351,7 @@ func versionQueriesToMgoQuery(queries []eventstore.VersionQuery, op signOperator
 func versionQueryToMgoQuery(query eventstore.VersionQuery, op signOperator) bson.M {
 	andQueries := make([]bson.M, 0, 2)
 	andQueries = append(andQueries, bson.M{versionKey: bson.M{string(op): query.Version}})
-	andQueries = append(andQueries, bson.M{aggregateIdKey: query.AggregateId})
+	andQueries = append(andQueries, bson.M{aggregateIdKey: query.AggregateID})
 	return bson.M{"$and": andQueries}
 }
 
@@ -622,25 +622,25 @@ func snapshotQueriesToMgoQuery(queries []eventstore.SnapshotQuery) (bson.M, *opt
 
 	// TODO we need to set hint for len(queries) > 1
 	if len(queries) == 1 {
-		if queries[0].AggregateId != "" {
+		if queries[0].AggregateID != "" {
 			opts := options.FindOptions{}
 			opts.SetHint(snapshotsAggregateIdIdIndex)
-			return bson.M{aggregateIdKey: queries[0].AggregateId}, &opts
+			return bson.M{aggregateIdKey: queries[0].AggregateID}, &opts
 		}
-		if queries[0].AggregateId == "" && queries[0].GroupId != "" {
+		if queries[0].AggregateID == "" && queries[0].GroupID != "" {
 			opts := options.FindOptions{}
 			opts.SetHint(snapshotsQueryGroupIdIndex)
-			return bson.M{groupIdKey: queries[0].GroupId}, &opts
+			return bson.M{groupIdKey: queries[0].GroupID}, &opts
 		}
 	}
 
 	for _, q := range queries {
 		andQueries := make([]bson.M, 0, 4)
-		if q.AggregateId != "" {
-			andQueries = append(andQueries, bson.M{aggregateIdKey: q.AggregateId})
+		if q.AggregateID != "" {
+			andQueries = append(andQueries, bson.M{aggregateIdKey: q.AggregateID})
 		}
-		if q.AggregateId == "" && q.GroupId != "" {
-			andQueries = append(andQueries, bson.M{groupIdKey: q.GroupId})
+		if q.AggregateID == "" && q.GroupID != "" {
+			andQueries = append(andQueries, bson.M{groupIdKey: q.GroupID})
 		}
 		orQueries = append(orQueries, bson.M{"$and": andQueries})
 	}
@@ -669,7 +669,8 @@ func (i *queryIterator) Next(ctx context.Context, q *eventstore.VersionQuery) bo
 
 	version := query[versionKey].(int64)
 	q.Version = uint64(version)
-	q.AggregateId = query[aggregateIdKey].(string)
+	q.AggregateID = query[aggregateIdKey].(string)
+	q.GroupID = query[groupIdKey].(string)
 	return true
 }
 

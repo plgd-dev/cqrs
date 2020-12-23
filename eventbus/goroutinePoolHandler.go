@@ -173,7 +173,7 @@ func (ed *eventsProcessor) process(ctx context.Context, eh event.Handler) error 
 }
 
 func eventToName(ev event.EventUnmarshaler) string {
-	return ev.GroupId + "." + ev.AggregateId
+	return ev.GroupID + "." + ev.AggregateID
 }
 
 type iter struct {

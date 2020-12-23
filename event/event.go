@@ -14,8 +14,8 @@ type Event interface {
 type EventUnmarshaler struct {
 	Version     uint64
 	EventType   string
-	AggregateId string
-	GroupId     string
+	AggregateID string
+	GroupID     string
 	Unmarshal   func(v interface{}) error
 }
 

@@ -102,7 +102,7 @@ type iterator struct {
 func (i *iterator) Rewind(ctx context.Context) {
 	var e event.EventUnmarshaler
 	for i.iter.Next(ctx, &e) {
-		if e.GroupId != i.model.groupId || e.AggregateId != i.model.aggregateId {
+		if e.GroupID != i.model.groupId || e.AggregateID != i.model.aggregateId {
 			i.nextEventToProcess = &e
 			return
 		}
@@ -111,7 +111,7 @@ func (i *iterator) Rewind(ctx context.Context) {
 
 func (i *iterator) RewindIgnore(ctx context.Context, e *event.EventUnmarshaler) bool {
 	for i.iter.Next(ctx, e) {
-		if e.GroupId != i.model.groupId || e.AggregateId != i.model.aggregateId {
+		if e.GroupID != i.model.groupId || e.AggregateID != i.model.aggregateId {
 			i.nextEventToProcess = e
 			return false
 		}
@@ -128,9 +128,9 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 		tmp := i.firstEvent
 		i.firstEvent = nil
 		ignore, reload := i.model.Update(tmp)
-		i.model.LogDebugfFunc("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", tmp.GroupId, tmp.AggregateId, tmp.Version, tmp.EventType, ignore, reload)
+		i.model.LogDebugfFunc("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v, ignore %v reload %v", tmp.GroupID, tmp.AggregateID, tmp.Version, tmp.EventType, ignore, reload)
 		if reload {
-			i.reload = &VersionQuery{AggregateId: tmp.AggregateId, Version: i.model.version}
+			i.reload = &VersionQuery{GroupID: tmp.GroupID, AggregateID: tmp.AggregateID, Version: i.model.version}
 			i.Rewind(ctx)
 			return false
 		}
@@ -145,7 +145,7 @@ func (i *iterator) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	}
 
 	if i.RewindIgnore(ctx, e) {
-		i.model.LogDebugfFunc("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", e.GroupId, e.AggregateId, e.Version, e.EventType)
+		i.model.LogDebugfFunc("projection.iterator.next: GroupId %v: AggregateId %v: Version %v, EvenType %v", e.GroupID, e.AggregateID, e.Version, e.EventType)
 		return true
 	}
 	return false
@@ -186,8 +186,8 @@ func (p *Projection) handle(ctx context.Context, iter event.Iter) (reloadQueries
 	ie := &e
 	reloadQueries = make([]VersionQuery, 0, 32)
 	for ie != nil {
-		p.LogDebugfFunc("projection.iterator.handle: GroupId %v: AggregateId %v: Version %v, EvenType %v", ie.GroupId, ie.AggregateId, ie.Version, ie.EventType)
-		am, err := p.getModel(ctx, ie.GroupId, ie.AggregateId)
+		p.LogDebugfFunc("projection.iterator.handle: GroupId %v: AggregateId %v: Version %v, EvenType %v", ie.GroupID, ie.AggregateID, ie.Version, ie.EventType)
+		am, err := p.getModel(ctx, ie.GroupID, ie.AggregateID)
 		if err != nil {
 			return nil, fmt.Errorf("cannot handle projection: %w", err)
 		}
@@ -254,13 +254,13 @@ func (p *Projection) Forget(queries []SnapshotQuery) (err error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for _, query := range queries {
-		if query.AggregateId == "" {
-			delete(p.aggregateModels, query.GroupId)
+		if query.AggregateID == "" {
+			delete(p.aggregateModels, query.GroupID)
 		} else {
-			if m, ok := p.aggregateModels[query.GroupId]; ok {
-				delete(m, query.AggregateId)
+			if m, ok := p.aggregateModels[query.GroupID]; ok {
+				delete(m, query.AggregateID)
 				if len(m) == 0 {
-					delete(p.aggregateModels, query.GroupId)
+					delete(p.aggregateModels, query.GroupID)
 				}
 			}
 		}
@@ -292,18 +292,18 @@ func (p *Projection) models(queries []SnapshotQuery) map[string]Model {
 	}
 	for _, query := range queries {
 		switch {
-		case query.GroupId == "" && query.AggregateId == "":
+		case query.GroupID == "" && query.AggregateID == "":
 			return p.allModels(models)
-		case query.GroupId != "" && query.AggregateId == "":
-			if aggregates, ok := p.aggregateModels[query.GroupId]; ok {
-				for aggrId, apm := range aggregates {
-					models[makeModelId(query.GroupId, aggrId)] = apm.model
+		case query.GroupID != "" && query.AggregateID == "":
+			if aggregates, ok := p.aggregateModels[query.GroupID]; ok {
+				for aggrID, apm := range aggregates {
+					models[makeModelId(query.GroupID, aggrID)] = apm.model
 				}
 			}
 		default:
-			if aggregates, ok := p.aggregateModels[query.GroupId]; ok {
-				if apm, ok := aggregates[query.AggregateId]; ok {
-					models[makeModelId(query.GroupId, query.AggregateId)] = apm.model
+			if aggregates, ok := p.aggregateModels[query.GroupID]; ok {
+				if apm, ok := aggregates[query.AggregateID]; ok {
+					models[makeModelId(query.GroupID, query.AggregateID)] = apm.model
 				}
 			}
 		}
