@@ -208,6 +208,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	eh3 := NewMockEventHandler()
 	err = store.LoadFromVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 			Version:     eventsToSave[2].Version(),
 		},
@@ -219,9 +220,11 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	eh4 := NewMockEventHandler()
 	err = store.LoadFromVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 		},
 		{
+			GroupID:     aggregateID2Path.GroupID,
 			AggregateID: aggregateID2Path.AggregateID,
 		},
 	}, eh4)
@@ -269,6 +272,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	eh7 := NewMockEventHandler()
 	err = store.LoadUpToVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 			Version:     eventsToSave[5].Version(),
 		},
@@ -280,6 +284,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	eh8 := NewMockEventHandler()
 	err = store.LoadUpToVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 			Version:     eventsToSave[0].Version(),
 		},
@@ -291,6 +296,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	eh9 := NewMockEventHandler()
 	err = store.LoadUpToVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 		},
 	}, eh9)
@@ -332,6 +338,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 
 	err = p.Project(ctx, []eventstore.SnapshotQuery{
 		eventstore.SnapshotQuery{
+			GroupID:     aggregateID2Path.GroupID,
 			AggregateID: aggregateID2Path.AggregateID,
 		},
 	})
@@ -344,6 +351,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	versionToRemove := 3
 	err = store.RemoveUpToVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 			Version:     eventsToSave[versionToRemove].Version(),
 		},
@@ -353,6 +361,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	eh10 := NewMockEventHandler()
 	err = store.LoadFromVersion(ctx, []eventstore.VersionQuery{
 		{
+			GroupID:     aggregateID1Path.GroupID,
 			AggregateID: aggregateID1Path.AggregateID,
 		},
 	}, eh10)

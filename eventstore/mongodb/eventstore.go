@@ -248,6 +248,10 @@ func ensureIndex(ctx context.Context, col *mongo.Collection, indexes ...bson.D) 
 	return nil
 }
 
+func getEventCollectionName(groupID string) string {
+	return eventCName + "_" + groupID
+}
+
 // Save save events to path.
 func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, events []event.Event) (concurrencyException bool, err error) {
 	s.LogDebugfFunc("mongodb.Evenstore.Save start")
@@ -273,13 +277,11 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 		}
 	}
 
-	col := s.client.Database(s.DBName()).Collection(eventCName)
-	/*
-		err = ensureIndex(ctx, col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
-		if err != nil {
-			return false, fmt.Errorf("cannot save events: %w", err)
-		}
-	*/
+	col := s.client.Database(s.DBName()).Collection(getEventCollectionName(groupId))
+	err = ensureIndex(ctx, col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
+	if err != nil {
+		return false, fmt.Errorf("cannot save events: %w", err)
+	}
 
 	if len(events) > 1 {
 		return s.saveEvents(ctx, col, groupId, aggregateId, events)
@@ -339,8 +341,11 @@ func versionQueriesToMgoQuery(queries []eventstore.VersionQuery, op signOperator
 	}
 
 	for _, q := range queries {
+		if q.GroupID == "" {
+			return bson.M{}, fmt.Errorf("invalid VersionQuery.GroupID")
+		}
 		if q.AggregateID == "" {
-			return bson.M{}, fmt.Errorf("invalid VersionQuery.AggregateId")
+			return bson.M{}, fmt.Errorf("invalid VersionQuery.AggregateID")
 		}
 		orQueries = append(orQueries, versionQueryToMgoQuery(q, op))
 	}
@@ -441,6 +446,31 @@ func (l *loader) QueryHandlePool(ctx context.Context, iter *queryIterator) error
 	return nil
 }
 
+func (s *EventStore) loadEvents(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler, funcToMgoQuery func(queries []eventstore.VersionQuery) (primitive.M, error)) error {
+	collections := make(map[string][]eventstore.VersionQuery)
+	for _, query := range queries {
+		collections[query.GroupID] = append(collections[query.GroupID], query)
+	}
+
+	var errors []error
+	for groupID, queries := range collections {
+		q, err := funcToMgoQuery(queries)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("cannot load events version: %w", err))
+			continue
+		}
+		err = s.loadMgoQuery(ctx, groupID, eh, q)
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("%+v", errors)
+	}
+	return nil
+}
+
 // LoadUpToVersion loads aggragates events up to a specific version.
 func (s *EventStore) LoadUpToVersion(ctx context.Context, queries []eventstore.VersionQuery, eh event.Handler) error {
 	s.LogDebugfFunc("mongodb.Eventstore.LoadUpToVersion start")
@@ -449,12 +479,9 @@ func (s *EventStore) LoadUpToVersion(ctx context.Context, queries []eventstore.V
 		s.LogDebugfFunc("mongodb.Eventstore.LoadUpToVersion takes %v", time.Since(t))
 	}()
 
-	q, err := versionQueriesToMgoQuery(queries, signOperator_lt)
-	if err != nil {
-		return fmt.Errorf("cannot load events up to version: %w", err)
-	}
-
-	return s.loadMgoQuery(ctx, eh, q)
+	return s.loadEvents(ctx, queries, eh, func(queries []eventstore.VersionQuery) (primitive.M, error) {
+		return versionQueriesToMgoQuery(queries, signOperator_lt)
+	})
 }
 
 // LoadFromVersion loads aggragates events from version.
@@ -464,19 +491,15 @@ func (s *EventStore) LoadFromVersion(ctx context.Context, queries []eventstore.V
 	defer func() {
 		s.LogDebugfFunc("mongodb.Evenstore.LoadFromVersion takes %v", time.Since(t))
 	}()
-
-	q, err := versionQueriesToMgoQuery(queries, signOperator_gte)
-	if err != nil {
-		return fmt.Errorf("cannot load events from version: %w", err)
-	}
-
-	return s.loadMgoQuery(ctx, eh, q)
+	return s.loadEvents(ctx, queries, eh, func(queries []eventstore.VersionQuery) (primitive.M, error) {
+		return versionQueriesToMgoQuery(queries, signOperator_gte)
+	})
 }
 
-func (s *EventStore) loadMgoQuery(ctx context.Context, eh event.Handler, mgoQuery bson.M) error {
+func (s *EventStore) loadMgoQuery(ctx context.Context, groupID string, eh event.Handler, mgoQuery bson.M) error {
 	opts := options.FindOptions{}
 	opts.SetHint(eventsQueryAggregateIdIndex)
-	iter, err := s.client.Database(s.DBName()).Collection(eventCName).Find(ctx, mgoQuery, &opts)
+	iter, err := s.client.Database(s.DBName()).Collection(getEventCollectionName(groupID)).Find(ctx, mgoQuery, &opts)
 	if err == mongo.ErrNilDocument {
 		return nil
 	}
@@ -519,17 +542,9 @@ func (s *EventStore) DBName() string {
 
 // Clear clears the event storage.
 func (s *EventStore) Clear(ctx context.Context) error {
-	var errors []error
-	s.client.Database(s.DBName()).Collection(eventCName).Indexes().DropAll(ctx)
-	if err := s.client.Database(s.DBName()).Collection(eventCName).Drop(ctx); err != nil {
-		errors = append(errors, err)
-	}
-	s.client.Database(s.DBName()).Collection(snapshotCName).Indexes().DropAll(ctx)
-	if err := s.client.Database(s.DBName()).Collection(snapshotCName).Drop(ctx); err != nil {
-		errors = append(errors, err)
-	}
-	if len(errors) > 0 {
-		return fmt.Errorf("cannot clear: %v", errors)
+	err := s.client.Database(s.DBName()).Drop(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot clear: %w", err)
 	}
 
 	return nil
@@ -713,14 +728,26 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 
 // RemoveUpToVersion deletes the aggragates events up to a specific version.
 func (s *EventStore) RemoveUpToVersion(ctx context.Context, queries []eventstore.VersionQuery) error {
-	deleteMgoQuery, err := versionQueriesToMgoQuery(queries, signOperator_lt)
-	if err != nil {
-		return fmt.Errorf("cannot remove events up to version: %w", err)
+	collections := make(map[string][]eventstore.VersionQuery)
+	for _, query := range queries {
+		collections[query.GroupID] = append(collections[query.GroupID], query)
 	}
 
-	_, err = s.client.Database(s.DBName()).Collection(eventCName).DeleteMany(ctx, deleteMgoQuery)
-	if err != nil {
-		return err
+	var errors []error
+	for groupID, queries := range collections {
+		q, err := versionQueriesToMgoQuery(queries, signOperator_lt)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("cannot load events version: %w", err))
+			continue
+		}
+		_, err = s.client.Database(s.DBName()).Collection(getEventCollectionName(groupID)).DeleteMany(ctx, q)
+		if err != nil {
+			errors = append(errors, err)
+			continue
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("%+v", errors)
 	}
 	return nil
 }
