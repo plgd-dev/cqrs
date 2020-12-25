@@ -278,9 +278,11 @@ func (s *EventStore) Save(ctx context.Context, groupId, aggregateId string, even
 	}
 
 	col := s.client.Database(s.DBName()).Collection(getEventCollectionName(groupId))
-	err = ensureIndex(ctx, col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
-	if err != nil {
-		return false, fmt.Errorf("cannot save events: %w", err)
+	if events[0].Version() == 0 {
+		err = ensureIndex(ctx, col, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
+		if err != nil {
+			return false, fmt.Errorf("cannot save events: %w", err)
+		}
 	}
 
 	if len(events) > 1 {
