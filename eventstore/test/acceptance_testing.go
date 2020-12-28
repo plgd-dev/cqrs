@@ -256,7 +256,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	conExcep, err = store.Save(ctx, aggregateID3Path.GroupID, aggregateID3Path.AggregateID, []event.Event{eventsToSave[0]})
 	require.NoError(t, err)
 	require.False(t, conExcep)
-	err = store.LoadFromSnapshot(ctx, []eventstore.SnapshotQuery{}, eh6)
+	err = store.LoadFromSnapshot(ctx, []eventstore.SnapshotQuery{{GroupID: aggregateID1Path.GroupID}, {GroupID: aggregateID2Path.GroupID}, {GroupID: aggregateID3Path.GroupID}}, eh6)
 	require.NoError(t, err)
 	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],
@@ -307,7 +307,7 @@ func AcceptanceTest(t *testing.T, ctx context.Context, store eventstore.EventSto
 	model := NewMockEventHandler()
 	p := eventstore.NewProjection(store, func(context.Context) (eventstore.Model, error) { return model, nil }, nil)
 
-	err = p.Project(ctx, []eventstore.SnapshotQuery{})
+	err = p.Project(ctx, []eventstore.SnapshotQuery{{GroupID: aggregateID1Path.GroupID}, {GroupID: aggregateID2Path.GroupID}, {GroupID: aggregateID3Path.GroupID}})
 	require.NoError(t, err)
 	require.Equal(t, []event.Event{
 		eventsToSave[0], eventsToSave[1], eventsToSave[2], eventsToSave[3], eventsToSave[4], eventsToSave[5],

@@ -134,18 +134,8 @@ func NewEventStoreWithClient(ctx context.Context, client *mongo.Client, dbPrefix
 		LogDebugfFunc:   LogDebugfFunc,
 	}
 
-	colEv := s.client.Database(s.DBName()).Collection(eventCName)
-	err := ensureIndex(ctx, colEv, eventsQueryIndex, eventsQueryGroupIdIndex, eventsQueryAggregateIdIndex)
-	if err != nil {
-		return nil, fmt.Errorf("cannot save events: %w", err)
-	}
-	colSn := s.client.Database(s.DBName()).Collection(snapshotCName)
-	err = ensureIndex(ctx, colSn, snapshotsAggregateIdIdIndex, snapshotsQueryGroupIdIndex, snapshotsQueryIndex)
-	if err != nil {
-		return nil, fmt.Errorf("cannot save snapshot query: %w", err)
-	}
 	colAv := s.client.Database(s.DBName()).Collection(maintenanceCName)
-	err = ensureIndex(ctx, colAv)
+	err := ensureIndex(ctx, colAv)
 	if err != nil {
 		return nil, fmt.Errorf("cannot save maintenance query: %w", err)
 	}
@@ -585,6 +575,10 @@ func makeDBSnapshot(groupID, aggregateID string, version uint64) bson.M {
 	}
 }
 
+func getSnapshotCollectionName(groupID string) string {
+	return snapshotCName + "_" + groupID
+}
+
 // SaveSnapshotQuery upserts the snapshot record
 func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID string, version uint64) (concurrencyException bool, err error) {
 	s.LogDebugfFunc("mongodb.Evenstore.SaveSnapshotQuery start")
@@ -598,14 +592,12 @@ func (s *EventStore) SaveSnapshotQuery(ctx context.Context, groupID, aggregateID
 	}
 
 	sbSnap := makeDBSnapshot(groupID, aggregateID, version)
-	col := s.client.Database(s.DBName()).Collection(snapshotCName)
-	/*
-		err = ensureIndex(ctx, col, snapshotsQueryIndex, snapshotsQueryGroupIdIndex)
+	col := s.client.Database(s.DBName()).Collection(getSnapshotCollectionName(groupID))
+	if version == 0 {
+		err = ensureIndex(ctx, col, snapshotsAggregateIdIdIndex, snapshotsQueryGroupIdIndex, snapshotsQueryIndex)
 		if err != nil {
 			return false, fmt.Errorf("cannot save snapshot query: %w", err)
 		}
-	*/
-	if version == 0 {
 		_, err := col.InsertOne(ctx, sbSnap)
 		if err != nil && IsDup(err) {
 			// someone update store newer snapshot
@@ -695,20 +687,14 @@ func (i *queryIterator) Err() error {
 	return i.iter.Err()
 }
 
-func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.SnapshotQuery, qh *loader) error {
-	s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries start")
-	t := time.Now()
-	defer func() {
-		s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries takes %v", time.Since(t))
-	}()
-
+func (s *EventStore) loadSnapshotQueries(ctx context.Context, groupID string, queries []eventstore.SnapshotQuery, qh *loader) error {
 	var err error
 	var iter *mongo.Cursor
 	query, hint := snapshotQueriesToMgoQuery(queries)
 	if hint == nil {
-		iter, err = s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, query)
+		iter, err = s.client.Database(s.DBName()).Collection(getSnapshotCollectionName(groupID)).Find(ctx, query)
 	} else {
-		iter, err = s.client.Database(s.DBName()).Collection(snapshotCName).Find(ctx, query, hint)
+		iter, err = s.client.Database(s.DBName()).Collection(getSnapshotCollectionName(groupID)).Find(ctx, query, hint)
 	}
 	if err == mongo.ErrNilDocument {
 		return nil
@@ -725,7 +711,38 @@ func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventsto
 	if err == nil {
 		return errClose
 	}
-	return err
+	return nil
+}
+
+func (s *EventStore) LoadSnapshotQueries(ctx context.Context, queries []eventstore.SnapshotQuery, qh *loader) error {
+	s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries start")
+	t := time.Now()
+	defer func() {
+		s.LogDebugfFunc("mongodb.Evenstore.LoadSnapshotQueries takes %v", time.Since(t))
+	}()
+	if len(queries) == 0 {
+		return fmt.Errorf("not supported")
+	}
+
+	collections := make(map[string][]eventstore.SnapshotQuery)
+	for _, query := range queries {
+		if query.GroupID == "" {
+			return fmt.Errorf("SnapshotQuery.GroupId is empty for %+v", query)
+		}
+		collections[query.GroupID] = append(collections[query.GroupID], query)
+	}
+
+	var errors []error
+	for groupID, queries := range collections {
+		err := s.loadSnapshotQueries(ctx, groupID, queries, qh)
+		if err != nil {
+			errors = append(errors, err)
+		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("%+v", errors)
+	}
+	return nil
 }
 
 // RemoveUpToVersion deletes the aggragates events up to a specific version.
