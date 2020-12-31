@@ -36,7 +36,7 @@ func (e ResourcePublished) EventType() string {
 	return http.ProtobufContentType(&pb.ResourcePublished{})
 }
 
-func (e ResourcePublished) AggregateId() string {
+func (e ResourcePublished) AggregateID() string {
 	return e.Id
 }
 
@@ -60,7 +60,7 @@ func (e ResourceUnpublished) EventType() string {
 	return http.ProtobufContentType(&pb.ResourceUnpublished{})
 }
 
-func (e ResourceUnpublished) AggregateId() string {
+func (e ResourceUnpublished) AggregateID() string {
 	return e.Id
 }
 
@@ -68,7 +68,7 @@ type ResourceStateSnapshotTaken struct {
 	pb.ResourceStateSnapshotTaken
 }
 
-func (rs *ResourceStateSnapshotTaken) AggregateId() string {
+func (rs *ResourceStateSnapshotTaken) AggregateID() string {
 	return rs.Id
 }
 
@@ -277,49 +277,49 @@ func TestAggregate(t *testing.T) {
 	}()
 
 	type Path struct {
-		GroupId     string
-		AggregateId string
+		GroupID     string
+		AggregateID string
 	}
 
 	path := Path{
-		GroupId:     "1",
-		AggregateId: "ID0",
+		GroupID:     "1",
+		AggregateID: "ID0",
 	}
 
 	path1 := Path{
-		GroupId:     "1",
-		AggregateId: "ID1",
+		GroupID:     "1",
+		AggregateID: "ID1",
 	}
 
 	commandPub := pb.PublishResourceRequest{
-		ResourceId: path.AggregateId,
+		ResourceId: path.AggregateID,
 		Resource: &pb.Resource{
-			Id: path.AggregateId,
+			Id: path.AggregateID,
 		},
 		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
 	commandUnpub := pb.UnpublishResourceRequest{
-		ResourceId:           path.AggregateId,
+		ResourceId:           path.AggregateID,
 		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
 	commandPub1 := pb.PublishResourceRequest{
-		ResourceId: path1.AggregateId,
+		ResourceId: path1.AggregateID,
 		Resource: &pb.Resource{
-			Id: path1.AggregateId,
+			Id: path1.AggregateID,
 		},
 		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
 	commandUnpub1 := pb.UnpublishResourceRequest{
-		ResourceId:           path1.AggregateId,
+		ResourceId:           path1.AggregateID,
 		AuthorizationContext: &pb.AuthorizationContext{},
 	}
 
 	newAggragate := func() *Aggregate {
-		a, err := NewAggregate(path.AggregateId, NewDefaultRetryFunc(1), 2, store, func(context.Context) (AggregateModel, error) {
-			return &ResourceStateSnapshotTaken{pb.ResourceStateSnapshotTaken{Id: path.AggregateId, Resource: &pb.Resource{}, EventMetadata: &pb.EventMetadata{}}}, nil
+		a, err := NewAggregate(path.GroupID, path.AggregateID, NewDefaultRetryFunc(1), 2, store, func(context.Context) (AggregateModel, error) {
+			return &ResourceStateSnapshotTaken{pb.ResourceStateSnapshotTaken{Id: path.AggregateID, Resource: &pb.Resource{}, EventMetadata: &pb.EventMetadata{}}}, nil
 		}, nil)
 		require.NoError(t, err)
 		return a
@@ -370,8 +370,8 @@ func TestAggregate(t *testing.T) {
 
 	err = p.Project(ctx, []eventstore.SnapshotQuery{
 		eventstore.SnapshotQuery{
-			GroupId:           path.GroupId,
-			AggregateId:       path.AggregateId,
+			GroupID:           path.GroupID,
+			AggregateID:       path.AggregateID,
 			SnapshotEventType: handler.SnapshotEventType(),
 		},
 	})
@@ -383,7 +383,7 @@ func TestAggregate(t *testing.T) {
 	model, err := concurrencyExcepTestA.factoryModel(ctx)
 	require.NoError(t, err)
 
-	amodel, err := newAggrModel(ctx, a.aggregateId, a.store, a.LogDebugfFunc, model)
+	amodel, err := newAggrModel(ctx, a.groupID, a.aggregateID, a.store, a.LogDebugfFunc, model)
 	require.NoError(t, err)
 
 	pb, concurrencyException, err := a.handleCommandWithAggrModel(ctx, commandPub, amodel)

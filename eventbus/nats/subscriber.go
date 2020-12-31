@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sync"
 
+	nats "github.com/nats-io/nats.go"
 	"github.com/plgd-dev/cqrs/event"
 	"github.com/plgd-dev/cqrs/eventbus"
 	protoEventBus "github.com/plgd-dev/cqrs/protobuf/eventbus"
-	nats "github.com/nats-io/nats.go"
 )
 
 // Subscriber implements a eventbus.Subscriber interface.
@@ -174,9 +174,9 @@ type iter struct {
 func (i *iter) Next(ctx context.Context, e *event.EventUnmarshaler) bool {
 	if i.hasNext {
 		e.Version = i.e.Version
-		e.AggregateId = i.e.AggregateId
+		e.AggregateID = i.e.AggregateId
 		e.EventType = i.e.EventType
-		e.GroupId = i.e.GroupId
+		e.GroupID = i.e.GroupId
 		e.Unmarshal = i.dataUnmarshaler
 		i.hasNext = false
 		return true
