@@ -16,7 +16,7 @@ const maintenanceCName = "maintenance"
 
 func makeDbAggregateVersion(task maintenance.Task) bson.M {
 	return bson.M{
-		aggregateIdKey: task.AggregateID,
+		aggregateIDKey: task.AggregateID,
 		versionKey:     task.Version,
 		idKey:          getID(task),
 	}
@@ -80,7 +80,7 @@ func (i *dbAggregateVersionIterator) Next(ctx context.Context, task *maintenance
 		return false
 	}
 
-	task.AggregateID = dbRecord[aggregateIdKey].(string)
+	task.AggregateID = dbRecord[aggregateIDKey].(string)
 	version := dbRecord[versionKey].(int64)
 	task.Version = uint64(version)
 	return true
